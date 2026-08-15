@@ -25,6 +25,19 @@ const PORT = Number(process.env.PORT || 8787);
 const isProd = process.env.NODE_ENV === "production";
 const BASE_URL = process.env.PUBLIC_BASE_URL || `http://localhost:${PORT}`;
 
+function publicBase(req) {
+  if (process.env.PUBLIC_BASE_URL) return process.env.PUBLIC_BASE_URL.replace(/\/$/, "");
+  const proto = (req.headers["x-forwarded-proto"] || req.protocol || "http")
+    .toString()
+    .split(",")[0]
+    .trim();
+  const host = (req.headers["x-forwarded-host"] || req.headers.host || `localhost:${PORT}`)
+    .toString()
+    .split(",")[0]
+    .trim();
+  return `${proto}://${host}`;
+}
+
 await ensureSeed();
 
 const app = express();
@@ -96,13 +109,13 @@ app.get("/api/health", (_req, res) => {
   });
 });
 
-app.get("/api/bootstrap", (_req, res) => {
+app.get("/api/bootstrap", (req, res) => {
   const entities = db.prepare("SELECT * FROM entities ORDER BY display_name").all().map(serializeEntity);
   const templates = db
     .prepare("SELECT * FROM templates WHERE is_active = 1 ORDER BY created_at DESC")
     .all();
   const users = db.prepare("SELECT id, email, name, role FROM users WHERE is_active = 1").all();
-  res.json({ entities, templates, users, baseUrl: BASE_URL });
+  res.json({ entities, templates, users, baseUrl: publicBase(req) });
 });
 
 app.get("/api/entities", (_req, res) => {
@@ -256,7 +269,8 @@ app.post("/api/envelopes/:id/bake", async (req, res) => {
 
 app.post("/api/envelopes/:id/send", async (req, res) => {
   try {
-    const result = startSigningInvites(req.params.id, BASE_URL, "staff");
+    const baseUrl = publicBase(req);
+    const result = startSigningInvites(req.params.id, baseUrl, "staff");
     res.json({ ...getEnvelopeBundle(req.params.id), invite: result });
   } catch (err) {
     res.status(400).json({ error: err.message || "Send failed" });
@@ -500,7 +514,7 @@ app.post("/api/sign/:token/sign", async (req, res) => {
 
     if (result.nextPartyId) {
       inviteParty(token.envelope_id, result.nextPartyId, {
-        baseUrl: BASE_URL,
+        baseUrl: publicBase(req),
         actor: "system",
       });
     }
@@ -543,7 +557,7 @@ app.post("/api/sign/:token/decline", (req, res) => {
 app.post("/api/envelopes/:id/parties/:partyId/link", (req, res) => {
   try {
     const result = inviteParty(req.params.id, req.params.partyId, {
-      baseUrl: BASE_URL,
+      baseUrl: publicBase(req),
       actor: "staff",
     });
     res.json(result);

@@ -363,6 +363,39 @@ textarea {
   .signer-row {
     grid-template-columns: 1fr;
   }
+
+  .topbar {
+    padding: 0.85rem 1rem;
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .nav-links {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .main {
+    width: min(1120px, calc(100% - 1.25rem));
+    padding: 1.25rem 0 2.5rem;
+  }
+
+  .hero-panel h1 {
+    font-size: clamp(1.8rem, 9vw, 2.4rem);
+  }
+
+  .pdf-frame {
+    min-height: 50vh;
+  }
+
+  .envelope-row {
+    grid-template-columns: 1fr;
+    gap: 0.55rem;
+  }
+
+  .btn {
+    min-height: 44px;
+  }
 }
 
 .pdf-stage {

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { api } from "../api.js";
 
 export default function EnvelopeDetail() {
@@ -128,9 +128,7 @@ export default function EnvelopeDetail() {
                 </button>
                 {links[party.id] ? (
                   <p className="meta">
-                    <Link to={links[party.id].replace(/^https?:\/\/[^/]+/, "")}>
-                      Open signing room
-                    </Link>
+                    <a href={links[party.id]}>Open signing room</a>
                   </p>
                 ) : null}
               </div>
