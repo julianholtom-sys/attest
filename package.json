@@ -1,0 +1,22 @@
+{
+  "name": "attest",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Attest — local e-sign UI framework (Vite/React + Express, no cloud storage)",
+  "scripts": {
+    "dev": "concurrently -n server,client -c teal,cyan \"npm run dev -w server\" \"npm run dev -w client\"",
+    "build": "npm run build -w client",
+    "start": "npm run start -w server",
+    "install:all": "npm install"
+  },
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
