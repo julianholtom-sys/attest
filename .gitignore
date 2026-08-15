@@ -9,3 +9,5 @@ uploads/
 server/data/
 .vite/
 coverage/
+client/test-results/
+client/playwright-report/

@@ -2,234 +2,553 @@ import express from "express";
 import cors from "cors";
 import multer from "multer";
 import path from "node:path";
-import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
+import { db, newId, now, sha256, parseJson } from "./db.js";
+import { appendEvent, listEvents, verifyEventChain } from "./events.js";
+import { bakeEnvelope } from "./bake.js";
 import {
-  UPLOADS_DIR,
-  SIGNED_DIR,
-  listEnvelopes,
-  getEnvelope,
-  createEnvelope,
-  updateEnvelope,
-  addAudit,
-  deleteEnvelope,
-} from "./store.js";
+  CONSENT_TEXT,
+  applySignatureAndCompleteParty,
+  evidenceChecklist,
+  evidenceGateOpen,
+  getActionableParty,
+  inviteParty,
+  resolveToken,
+  startSigningInvites,
+} from "./signing.js";
+import { ensureSeed } from "./seed.js";
+import { absolutePath, readBytes, writeBytes } from "./storage.js";
+import { listOutboundEmails } from "./mail.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8787);
 const isProd = process.env.NODE_ENV === "production";
+const BASE_URL = process.env.PUBLIC_BASE_URL || `http://localhost:${PORT}`;
 
-const upload = multer({
-  storage: multer.diskStorage({
-    destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
-    filename: (_req, file, cb) => {
-      const safe = file.originalname.replace(/[^\w.\-]+/g, "_");
-      cb(null, `${Date.now()}-${safe}`);
-    },
-  }),
-  fileFilter: (_req, file, cb) => {
-    if (file.mimetype !== "application/pdf") {
-      cb(new Error("Only PDF uploads are supported"));
-      return;
-    }
-    cb(null, true);
-  },
-  limits: { fileSize: 25 * 1024 * 1024 },
-});
+await ensureSeed();
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: "15mb" }));
+app.use(express.json({ limit: "20mb" }));
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 },
+});
+
+function clientMeta(req) {
+  return {
+    ip: req.headers["x-forwarded-for"]?.toString().split(",")[0] || req.socket.remoteAddress,
+    userAgent: req.headers["user-agent"] || "unknown",
+  };
+}
+
+function serializeEntity(row) {
+  if (!row) return null;
+  return {
+    ...row,
+    brand: parseJson(row.brand_json, {}),
+    domain_verified: Boolean(row.domain_verified),
+    is_active: Boolean(row.is_active),
+  };
+}
+
+function getEnvelopeBundle(id) {
+  const envelope = db.prepare("SELECT * FROM envelopes WHERE id = ?").get(id);
+  if (!envelope) return null;
+  const entity = serializeEntity(
+    db.prepare("SELECT * FROM entities WHERE id = ?").get(envelope.entity_id)
+  );
+  const parties = db
+    .prepare(
+      `SELECT p.*, r.role_key, r.label AS role_label, r.evidence_required, r.signing_order
+       FROM envelope_parties p
+       JOIN template_roles r ON r.id = p.role_id
+       WHERE p.envelope_id = ?
+       ORDER BY p.order_index ASC`
+    )
+    .all(id)
+    .map((p) => ({ ...p, evidence_required: Boolean(p.evidence_required) }));
+  const documents = db
+    .prepare("SELECT * FROM documents WHERE envelope_id = ? ORDER BY created_at ASC")
+    .all(id);
+  const events = listEvents(id);
+  const emails = listOutboundEmails(id);
+  const actionable = getActionableParty(id);
+  return {
+    ...envelope,
+    entity,
+    parties,
+    documents,
+    events,
+    emails,
+    actionable_party_id: actionable?.id || null,
+  };
+}
 
 app.get("/api/health", (_req, res) => {
-  res.json({ ok: true, service: "attest", storage: "local" });
+  res.json({
+    ok: true,
+    service: "attest",
+    storage: "local-disk",
+    db: "sqlite",
+    model: "esign-data-model-local",
+  });
+});
+
+app.get("/api/bootstrap", (_req, res) => {
+  const entities = db.prepare("SELECT * FROM entities ORDER BY display_name").all().map(serializeEntity);
+  const templates = db
+    .prepare("SELECT * FROM templates WHERE is_active = 1 ORDER BY created_at DESC")
+    .all();
+  const users = db.prepare("SELECT id, email, name, role FROM users WHERE is_active = 1").all();
+  res.json({ entities, templates, users, baseUrl: BASE_URL });
+});
+
+app.get("/api/entities", (_req, res) => {
+  res.json(
+    db.prepare("SELECT * FROM entities ORDER BY display_name").all().map(serializeEntity)
+  );
+});
+
+app.get("/api/templates", (_req, res) => {
+  const templates = db.prepare("SELECT * FROM templates ORDER BY created_at DESC").all();
+  res.json(
+    templates.map((t) => ({
+      ...t,
+      roles: db
+        .prepare("SELECT * FROM template_roles WHERE template_id = ? ORDER BY signing_order")
+        .all(t.id),
+      fields: db.prepare("SELECT * FROM template_fields WHERE template_id = ?").all(t.id),
+    }))
+  );
+});
+
+app.get("/api/templates/:id", (req, res) => {
+  const t = db.prepare("SELECT * FROM templates WHERE id = ?").get(req.params.id);
+  if (!t) return res.status(404).json({ error: "Not found" });
+  const roles = db
+    .prepare("SELECT * FROM template_roles WHERE template_id = ? ORDER BY signing_order")
+    .all(t.id)
+    .map((role) => ({
+      ...role,
+      evidence_required: Boolean(role.evidence_required),
+      evidence_requirements: db
+        .prepare("SELECT * FROM evidence_requirements WHERE role_id = ?")
+        .all(role.id)
+        .map((r) => ({ ...r, accepted_mimes: JSON.parse(r.accepted_mimes || "[]") })),
+    }));
+  const fields = db.prepare("SELECT * FROM template_fields WHERE template_id = ?").all(t.id);
+  const versions = db
+    .prepare(
+      "SELECT * FROM template_versions WHERE template_id = ? ORDER BY version_no DESC"
+    )
+    .all(t.id);
+  res.json({ ...t, roles, fields, versions });
 });
 
 app.get("/api/envelopes", (_req, res) => {
-  res.json(listEnvelopes());
+  const rows = db
+    .prepare("SELECT * FROM envelopes ORDER BY created_at DESC")
+    .all()
+    .map((e) => {
+      const entity = db.prepare("SELECT display_name, slug FROM entities WHERE id = ?").get(e.entity_id);
+      const parties = db
+        .prepare("SELECT status, role_id FROM envelope_parties WHERE envelope_id = ?")
+        .all(e.id);
+      return { ...e, entity, party_count: parties.length, parties };
+    });
+  res.json(rows);
 });
 
 app.get("/api/envelopes/:id", (req, res) => {
-  const env = getEnvelope(req.params.id);
-  if (!env) return res.status(404).json({ error: "Not found" });
-  res.json(env);
+  const bundle = getEnvelopeBundle(req.params.id);
+  if (!bundle) return res.status(404).json({ error: "Not found" });
+  res.json(bundle);
 });
 
-app.post("/api/envelopes", upload.single("document"), (req, res) => {
+app.post("/api/envelopes", (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ error: "PDF required" });
-    let signers = [];
-    if (req.body.signers) {
-      signers =
-        typeof req.body.signers === "string"
-          ? JSON.parse(req.body.signers)
-          : req.body.signers;
+    const {
+      entityId,
+      templateId,
+      title,
+      externalClientRef,
+      parties,
+      reminderFrequency = "none",
+    } = req.body || {};
+    const entity = db.prepare("SELECT * FROM entities WHERE id = ?").get(entityId);
+    if (!entity) return res.status(400).json({ error: "Unknown entity" });
+    if (!entity.domain_verified) {
+      return res.status(400).json({ error: "Entity domain_verified = false; cannot create envelope" });
     }
-    const envelope = createEnvelope({
-      title: req.body.title || req.file.originalname,
-      fileName: req.file.originalname,
-      storedName: req.file.filename,
-      signers,
+    const template = db.prepare("SELECT * FROM templates WHERE id = ?").get(templateId);
+    if (!template) return res.status(400).json({ error: "Unknown template" });
+    const roles = db
+      .prepare("SELECT * FROM template_roles WHERE template_id = ? ORDER BY signing_order")
+      .all(templateId);
+    if (roles.length !== 3) {
+      return res.status(400).json({ error: "Template must define company/agency/supplier roles" });
+    }
+    if (!Array.isArray(parties) || parties.length !== 3) {
+      return res.status(400).json({ error: "Provide exactly three parties" });
+    }
+
+    const user = db.prepare("SELECT id FROM users WHERE role = 'admin' LIMIT 1").get();
+    const envelopeId = newId();
+    db.prepare(
+      `INSERT INTO envelopes (
+        id, entity_id, status, signing_mode, reminder_frequency, max_auto_reminders,
+        external_client_ref, title, created_by, created_at
+      ) VALUES (?, ?, 'draft', 'sequential', ?, 5, ?, ?, ?, ?)`
+    ).run(
+      envelopeId,
+      entityId,
+      reminderFrequency,
+      externalClientRef || null,
+      title || template.name,
+      user?.id || null,
+      now()
+    );
+
+    for (const role of roles) {
+      const incoming = parties.find((p) => p.roleKey === role.role_key);
+      if (!incoming?.signer_name || !incoming?.signer_email || !incoming?.company_name) {
+        throw new Error(`Missing party details for role ${role.role_key}`);
+      }
+      db.prepare(
+        `INSERT INTO envelope_parties (
+          id, envelope_id, role_id, company_name, signer_name, signer_email,
+          status, order_index
+        ) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)`
+      ).run(
+        newId(),
+        envelopeId,
+        role.id,
+        incoming.company_name,
+        incoming.signer_name,
+        incoming.signer_email,
+        role.signing_order
+      );
+    }
+
+    appendEvent({
+      envelopeId,
+      actor: user ? `staff:${user.id}` : "staff",
+      eventType: "envelope_created",
+      metadata: { template_id: templateId, title: title || template.name },
     });
-    res.status(201).json(envelope);
+
+    res.status(201).json(getEnvelopeBundle(envelopeId));
   } catch (err) {
     res.status(400).json({ error: err.message || "Create failed" });
   }
 });
 
-app.patch("/api/envelopes/:id", (req, res) => {
-  const env = getEnvelope(req.params.id);
-  if (!env) return res.status(404).json({ error: "Not found" });
-  const allowed = ["title", "status", "fields", "signers"];
-  const patch = {};
-  for (const key of allowed) {
-    if (req.body[key] !== undefined) patch[key] = req.body[key];
-  }
-  const updated = updateEnvelope(req.params.id, patch);
-  if (req.body.fields) {
-    addAudit(req.params.id, "fields_updated", "Signature fields updated");
-  }
-  if (req.body.status === "sent" && env.status !== "sent") {
-    addAudit(req.params.id, "sent", "Envelope sent for signature");
-  }
-  res.json(getEnvelope(req.params.id) || updated);
-});
-
-app.delete("/api/envelopes/:id", (req, res) => {
-  if (!deleteEnvelope(req.params.id)) {
-    return res.status(404).json({ error: "Not found" });
-  }
-  res.status(204).end();
-});
-
-app.get("/api/envelopes/:id/document", (req, res) => {
-  const env = getEnvelope(req.params.id);
-  if (!env) return res.status(404).json({ error: "Not found" });
-  const preferSigned = req.query.signed === "1" && env.signedStoredName;
-  const name = preferSigned ? env.signedStoredName : env.storedName;
-  const dir = preferSigned ? SIGNED_DIR : UPLOADS_DIR;
-  const filePath = path.join(dir, name);
-  if (!fs.existsSync(filePath)) {
-    return res.status(404).json({ error: "File missing" });
-  }
-  res.setHeader("Content-Type", "application/pdf");
-  res.setHeader(
-    "Content-Disposition",
-    `inline; filename="${preferSigned ? `signed-${env.fileName}` : env.fileName}"`
-  );
-  fs.createReadStream(filePath).pipe(res);
-});
-
-app.post("/api/envelopes/:id/sign", async (req, res) => {
+app.post("/api/envelopes/:id/bake", async (req, res) => {
   try {
-    const env = getEnvelope(req.params.id);
-    if (!env) return res.status(404).json({ error: "Not found" });
-    const { signerId, signatureDataUrl, typedName } = req.body || {};
-    const signer = env.signers.find((s) => s.id === signerId);
-    if (!signer) return res.status(400).json({ error: "Unknown signer" });
-    if (!signatureDataUrl) {
-      return res.status(400).json({ error: "Signature image required" });
-    }
-
-    const sourcePath = path.join(UPLOADS_DIR, env.storedName);
-    const pdfBytes = fs.readFileSync(sourcePath);
-    const pdfDoc = await PDFDocument.load(pdfBytes);
-    const pages = pdfDoc.getPages();
-    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-
-    const pngBase64 = String(signatureDataUrl).replace(
-      /^data:image\/\w+;base64,/,
-      ""
-    );
-    const pngBytes = Buffer.from(pngBase64, "base64");
-    const signatureImage = await pdfDoc.embedPng(pngBytes);
-
-    const signerFields = (env.fields || []).filter(
-      (f) => f.signerId === signerId || !f.signerId
-    );
-    const targets =
-      signerFields.length > 0
-        ? signerFields
-        : [
-            {
-              page: 0,
-              xPct: 0.12,
-              yPct: 0.78,
-              wPct: 0.28,
-              hPct: 0.08,
-              type: "signature",
-            },
-          ];
-
-    for (const field of targets) {
-      const pageIndex = Math.min(
-        Math.max(Number(field.page) || 0, 0),
-        pages.length - 1
-      );
-      const page = pages[pageIndex];
-      const { width, height } = page.getSize();
-      const w = (field.wPct ?? 0.28) * width;
-      const h = (field.hPct ?? 0.08) * height;
-      const x = (field.xPct ?? 0.12) * width;
-      const yFromTop = (field.yPct ?? 0.78) * height;
-      const y = height - yFromTop - h;
-
-      if (field.type === "date") {
-        const label = new Date().toLocaleDateString();
-        page.drawText(label, {
-          x: x + 4,
-          y: y + h / 3,
-          size: 11,
-          font,
-          color: rgb(0.1, 0.12, 0.16),
-        });
-      } else if (field.type === "name") {
-        page.drawText(typedName || signer.name, {
-          x: x + 4,
-          y: y + h / 3,
-          size: 12,
-          font,
-          color: rgb(0.1, 0.12, 0.16),
-        });
-      } else {
-        page.drawImage(signatureImage, { x, y, width: w, height: h });
-      }
-    }
-
-    const outName = `${env.id}-signed.pdf`;
-    const outPath = path.join(SIGNED_DIR, outName);
-    fs.writeFileSync(outPath, await pdfDoc.save());
-
-    const now = new Date().toISOString();
-    const signers = env.signers.map((s) =>
-      s.id === signerId
-        ? {
-            ...s,
-            status: "signed",
-            signedAt: now,
-            signatureDataUrl,
-            typedName: typedName || s.name,
-          }
-        : s
-    );
-    const allSigned = signers.every((s) => s.status === "signed");
-    updateEnvelope(env.id, {
-      signers,
-      status: allSigned ? "completed" : "partial",
-      completedAt: allSigned ? now : null,
-      signedStoredName: outName,
-    });
-    addAudit(
-      env.id,
-      "signed",
-      `${signer.name} signed locally${typedName ? ` as “${typedName}”` : ""}`
-    );
-
-    res.json(getEnvelope(env.id));
+    await bakeEnvelope(req.params.id, { actor: "staff" });
+    res.json(getEnvelopeBundle(req.params.id));
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message || "Sign failed" });
+    res.status(400).json({ error: err.message || "Bake failed" });
+  }
+});
+
+app.post("/api/envelopes/:id/send", async (req, res) => {
+  try {
+    const result = startSigningInvites(req.params.id, BASE_URL, "staff");
+    res.json({ ...getEnvelopeBundle(req.params.id), invite: result });
+  } catch (err) {
+    res.status(400).json({ error: err.message || "Send failed" });
+  }
+});
+
+app.post("/api/envelopes/:id/void", (req, res) => {
+  const envelope = db.prepare("SELECT * FROM envelopes WHERE id = ?").get(req.params.id);
+  if (!envelope) return res.status(404).json({ error: "Not found" });
+  if (["completed", "declined", "voided", "expired"].includes(envelope.status)) {
+    return res.status(400).json({ error: "Envelope already terminal" });
+  }
+  const reason = req.body?.reason || "Voided by staff";
+  db.prepare(
+    "UPDATE envelopes SET status = 'voided', void_reason = ? WHERE id = ?"
+  ).run(reason, envelope.id);
+  db.prepare(
+    "UPDATE party_access_tokens SET revoked_at = ? WHERE party_id IN (SELECT id FROM envelope_parties WHERE envelope_id = ?) AND revoked_at IS NULL"
+  ).run(now(), envelope.id);
+  appendEvent({
+    envelopeId: envelope.id,
+    actor: "staff",
+    eventType: "voided",
+    metadata: { reason },
+  });
+  res.json(getEnvelopeBundle(envelope.id));
+});
+
+app.get("/api/envelopes/:id/documents/:kind", (req, res) => {
+  const doc = db
+    .prepare(
+      "SELECT * FROM documents WHERE envelope_id = ? AND kind = ? ORDER BY created_at DESC LIMIT 1"
+    )
+    .get(req.params.id, req.params.kind);
+  if (!doc) return res.status(404).json({ error: "Document not found" });
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `inline; filename="${req.params.kind}.pdf"`);
+  res.send(readBytes(doc.storage_ref));
+});
+
+app.get("/api/events/verify", (req, res) => {
+  res.json(verifyEventChain(req.query.envelopeId || null));
+});
+
+// Signing room (tokenized)
+app.get("/api/sign/:token", (req, res) => {
+  const token = resolveToken(req.params.token);
+  if (!token) return res.status(401).json({ error: "Invalid or expired token" });
+  const { ip, userAgent } = clientMeta(req);
+  const party = db.prepare("SELECT * FROM envelope_parties WHERE id = ?").get(token.party_id);
+  const envelope = getEnvelopeBundle(token.envelope_id);
+  const role = db.prepare("SELECT * FROM template_roles WHERE id = ?").get(party.role_id);
+  const fields = db
+    .prepare("SELECT * FROM template_fields WHERE role_id = ?")
+    .all(party.role_id);
+  const values = db
+    .prepare("SELECT * FROM field_values WHERE envelope_id = ? AND party_id = ?")
+    .all(token.envelope_id, party.id);
+
+  if (party.status === "notified") {
+    db.prepare("UPDATE envelope_parties SET status = 'viewed' WHERE id = ?").run(party.id);
+    appendEvent({
+      envelopeId: token.envelope_id,
+      partyId: party.id,
+      actor: "party",
+      eventType: "document_viewed",
+      ip,
+      userAgent,
+    });
+  }
+
+  const checklist = evidenceChecklist(party.id);
+  const gate = evidenceGateOpen(party.id);
+  const actionable = getActionableParty(token.envelope_id);
+
+  res.json({
+    consent_text: CONSENT_TEXT,
+    party: { ...party, role_key: role.role_key, role_label: role.label },
+    envelope,
+    fields,
+    values,
+    checklist,
+    gate,
+    is_turn: actionable?.id === party.id,
+    document_url: `/api/envelopes/${token.envelope_id}/documents/baked`,
+  });
+});
+
+app.post("/api/sign/:token/fields", (req, res) => {
+  try {
+    const token = resolveToken(req.params.token);
+    if (!token) return res.status(401).json({ error: "Invalid or expired token" });
+    const { fieldId, value } = req.body || {};
+    const field = db.prepare("SELECT * FROM template_fields WHERE id = ?").get(fieldId);
+    if (!field) return res.status(400).json({ error: "Unknown field" });
+    if (field.role_id !== token.role_id) {
+      return res.status(403).json({ error: "Field not owned by this role" });
+    }
+    const { ip } = clientMeta(req);
+    const valueHash = sha256(String(value ?? ""));
+    const existing = db
+      .prepare("SELECT id FROM field_values WHERE envelope_id = ? AND field_id = ?")
+      .get(token.envelope_id, fieldId);
+    if (existing) {
+      db.prepare(
+        `UPDATE field_values SET value = ?, value_hash = ?, captured_at = ?, captured_ip = ?, party_id = ?
+         WHERE id = ?`
+      ).run(String(value ?? ""), valueHash, now(), ip, token.party_id, existing.id);
+    } else {
+      db.prepare(
+        `INSERT INTO field_values (
+          id, envelope_id, field_id, party_id, value, value_hash, captured_at, captured_ip
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(
+        newId(),
+        token.envelope_id,
+        fieldId,
+        token.party_id,
+        String(value ?? ""),
+        valueHash,
+        now(),
+        ip
+      );
+    }
+    appendEvent({
+      envelopeId: token.envelope_id,
+      partyId: token.party_id,
+      actor: "party",
+      eventType: "field_completed",
+      metadata: { field_id: fieldId, field_key: field.field_key },
+      ip,
+    });
+    db.prepare(
+      "UPDATE envelope_parties SET status = 'in_progress' WHERE id = ? AND status IN ('viewed','notified')"
+    ).run(token.party_id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post("/api/sign/:token/evidence", upload.single("file"), (req, res) => {
+  try {
+    const token = resolveToken(req.params.token);
+    if (!token) return res.status(401).json({ error: "Invalid or expired token" });
+    const requirementId = req.body.requirementId;
+    const reqRow = db
+      .prepare("SELECT * FROM evidence_requirements WHERE id = ?")
+      .get(requirementId);
+    if (!reqRow) return res.status(400).json({ error: "Unknown requirement" });
+    if (reqRow.role_id !== token.role_id) {
+      return res.status(403).json({ error: "Requirement not for this role" });
+    }
+    if (!req.file) return res.status(400).json({ error: "File required" });
+    if (req.file.size > (reqRow.max_size_bytes || 10 * 1024 * 1024)) {
+      return res.status(400).json({ error: "File too large" });
+    }
+    const accepted = JSON.parse(reqRow.accepted_mimes || "[]");
+    if (accepted.length && !accepted.includes(req.file.mimetype)) {
+      return res.status(400).json({ error: `MIME not accepted: ${req.file.mimetype}` });
+    }
+    // Basic magic-byte check for PDF / JPEG / PNG
+    const buf = req.file.buffer;
+    const isPdf = buf.slice(0, 5).toString() === "%PDF-";
+    const isJpeg = buf[0] === 0xff && buf[1] === 0xd8;
+    const isPng = buf.slice(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+    if (!(isPdf || isJpeg || isPng)) {
+      return res.status(400).json({ error: "File content does not match PDF/JPEG/PNG" });
+    }
+
+    const stored = writeBytes(
+      "evidence",
+      `${token.party_id}-${reqRow.requirement_key}-${Date.now()}`,
+      buf
+    );
+    const { ip } = clientMeta(req);
+    const id = newId();
+    const retention = new Date();
+    retention.setFullYear(retention.getFullYear() + 6);
+    db.prepare(
+      `INSERT INTO evidence_files (
+        id, party_id, envelope_id, requirement_id, review_status, original_name,
+        mime, size_bytes, storage_ref, file_hash, uploaded_at, uploaded_ip,
+        retention_expires_at
+      ) VALUES (?, ?, ?, ?, 'uploaded', ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      id,
+      token.party_id,
+      token.envelope_id,
+      requirementId,
+      req.file.originalname,
+      req.file.mimetype,
+      req.file.size,
+      stored.storageRef,
+      stored.sha256,
+      now(),
+      ip,
+      retention.toISOString()
+    );
+    appendEvent({
+      envelopeId: token.envelope_id,
+      partyId: token.party_id,
+      actor: "party",
+      eventType: "evidence_uploaded",
+      metadata: {
+        requirement_key: reqRow.requirement_key,
+        evidence_file_id: id,
+        file_hash: stored.sha256,
+      },
+      ip,
+    });
+    res.status(201).json({
+      ok: true,
+      checklist: evidenceChecklist(token.party_id),
+      gate: evidenceGateOpen(token.party_id),
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post("/api/sign/:token/sign", async (req, res) => {
+  try {
+    const token = resolveToken(req.params.token);
+    if (!token) return res.status(401).json({ error: "Invalid or expired token" });
+    const { signatureDataUrl, method = "drawn", typedName, consent } = req.body || {};
+    if (!consent) return res.status(400).json({ error: "Consent required" });
+    if (!signatureDataUrl) return res.status(400).json({ error: "Signature required" });
+    const { ip, userAgent } = clientMeta(req);
+
+    const result = await applySignatureAndCompleteParty({
+      envelopeId: token.envelope_id,
+      partyId: token.party_id,
+      method,
+      signatureDataUrl,
+      typedName,
+      ip,
+      userAgent,
+      tokenRow: token,
+    });
+
+    if (result.nextPartyId) {
+      inviteParty(token.envelope_id, result.nextPartyId, {
+        baseUrl: BASE_URL,
+        actor: "system",
+      });
+    }
+
+    res.json({
+      ok: true,
+      ...result,
+      envelope: getEnvelopeBundle(token.envelope_id),
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message || "Sign failed" });
+  }
+});
+
+app.post("/api/sign/:token/decline", (req, res) => {
+  const token = resolveToken(req.params.token);
+  if (!token) return res.status(401).json({ error: "Invalid or expired token" });
+  const reason = req.body?.reason || "Declined";
+  const { ip, userAgent } = clientMeta(req);
+  db.prepare(
+    "UPDATE envelope_parties SET status = 'declined', declined_reason = ? WHERE id = ?"
+  ).run(reason, token.party_id);
+  db.prepare("UPDATE envelopes SET status = 'declined' WHERE id = ?").run(token.envelope_id);
+  db.prepare(
+    "UPDATE party_access_tokens SET revoked_at = ? WHERE party_id IN (SELECT id FROM envelope_parties WHERE envelope_id = ?)"
+  ).run(now(), token.envelope_id);
+  appendEvent({
+    envelopeId: token.envelope_id,
+    partyId: token.party_id,
+    actor: "party",
+    eventType: "declined",
+    metadata: { reason },
+    ip,
+    userAgent,
+  });
+  res.json(getEnvelopeBundle(token.envelope_id));
+});
+
+// Dev helper: mint a fresh link for a party (staff)
+app.post("/api/envelopes/:id/parties/:partyId/link", (req, res) => {
+  try {
+    const result = inviteParty(req.params.id, req.params.partyId, {
+      baseUrl: BASE_URL,
+      actor: "staff",
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
   }
 });
 
@@ -248,5 +567,6 @@ app.use((err, _req, res, _next) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Attest API listening on http://localhost:${PORT}`);
+  console.log(`Attest API on http://localhost:${PORT}`);
+  console.log(`Public base URL: ${BASE_URL}`);
 });

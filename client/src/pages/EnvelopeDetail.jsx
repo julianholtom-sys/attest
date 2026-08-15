@@ -1,184 +1,177 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { api } from "../api.js";
-import PdfViewer from "../components/PdfViewer.jsx";
 
 export default function EnvelopeDetail() {
   const { id } = useParams();
-  const navigate = useNavigate();
   const [envelope, setEnvelope] = useState(null);
-  const [fields, setFields] = useState([]);
-  const [placeMode, setPlaceMode] = useState(null);
-  const [activeSignerId, setActiveSignerId] = useState(null);
   const [error, setError] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [busy, setBusy] = useState("");
+  const [links, setLinks] = useState({});
+  const [chain, setChain] = useState(null);
+
+  async function reload() {
+    const data = await api.getEnvelope(id);
+    setEnvelope(data);
+    setChain(await api.verifyEvents(id));
+  }
 
   useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const data = await api.getEnvelope(id);
-        if (!alive) return;
-        setEnvelope(data);
-        setFields(data.fields || []);
-        setActiveSignerId(data.signers?.[0]?.id || null);
-      } catch (err) {
-        if (alive) setError(err.message);
-      }
-    })();
-    return () => {
-      alive = false;
-    };
+    reload().catch((err) => setError(err.message));
   }, [id]);
 
-  async function saveFields(nextFields = fields) {
-    setSaving(true);
+  async function run(action, fn) {
+    setBusy(action);
     setError("");
     try {
-      const updated = await api.updateEnvelope(id, { fields: nextFields });
-      setEnvelope(updated);
-      setFields(updated.fields || nextFields);
+      await fn();
+      await reload();
     } catch (err) {
       setError(err.message);
     } finally {
-      setSaving(false);
+      setBusy("");
     }
   }
 
-  async function sendEnvelope() {
-    setSaving(true);
-    setError("");
-    try {
-      await api.updateEnvelope(id, { fields, status: "sent" });
-      const updated = await api.getEnvelope(id);
-      setEnvelope(updated);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function remove() {
-    if (!window.confirm("Delete this envelope and its local files?")) return;
-    await api.deleteEnvelope(id);
-    navigate("/");
-  }
-
-  if (error && !envelope) return <p className="error">{error}</p>;
-  if (!envelope) return <p className="muted">Loading envelope…</p>;
-
-  const docUrl = api.documentUrl(
-    id,
-    envelope.status === "completed" && Boolean(envelope.signedStoredName)
-  );
+  if (!envelope && !error) return <p className="muted">Loading envelope…</p>;
+  if (!envelope) return <p className="error">{error}</p>;
 
   return (
     <div>
       <section className="hero-panel">
         <h1>{envelope.title}</h1>
         <p>
-          {envelope.fileName} · <span className={`badge ${envelope.status}`}>{envelope.status}</span>
+          {envelope.entity?.display_name} ·{" "}
+          <span className={`badge ${envelope.status}`}>{envelope.status}</span>
+          {envelope.baked_hash ? (
+            <span className="muted"> · bake {envelope.baked_hash.slice(0, 12)}…</span>
+          ) : null}
         </p>
       </section>
 
+      {envelope.bake_error ? <p className="error">Bake error: {envelope.bake_error}</p> : null}
+      {error ? <p className="error">{error}</p> : null}
+
       <div className="toolbar">
-        <Link className="btn" to={`/envelopes/${id}/sign`}>
-          Open signing room
-        </Link>
-        <button className="btn secondary" type="button" onClick={sendEnvelope} disabled={saving}>
-          Mark sent
+        <button
+          className="btn"
+          type="button"
+          disabled={busy || envelope.status !== "draft"}
+          onClick={() => run("bake", () => api.bakeEnvelope(id))}
+        >
+          {busy === "bake" ? "Baking…" : "Bake"}
         </button>
-        <a className="btn secondary" href={docUrl} target="_blank" rel="noreferrer">
-          Open PDF
-        </a>
-        <button className="btn danger" type="button" onClick={remove}>
-          Delete
+        <button
+          className="btn secondary"
+          type="button"
+          disabled={busy || envelope.status !== "ready"}
+          onClick={() => run("send", () => api.sendEnvelope(id))}
+        >
+          {busy === "send" ? "Sending…" : "Send first invitation"}
+        </button>
+        {envelope.baked_document_id ? (
+          <a className="btn secondary" href={api.documentUrl(id, "baked")} target="_blank" rel="noreferrer">
+            Open baked PDF
+          </a>
+        ) : null}
+        {envelope.status === "completed" ? (
+          <>
+            <a className="btn secondary" href={api.documentUrl(id, "completed")} target="_blank" rel="noreferrer">
+              Completed PDF
+            </a>
+            <a className="btn secondary" href={api.documentUrl(id, "certificate")} target="_blank" rel="noreferrer">
+              Certificate
+            </a>
+          </>
+        ) : null}
+        <button
+          className="btn danger"
+          type="button"
+          disabled={busy || ["completed", "declined", "voided", "expired"].includes(envelope.status)}
+          onClick={() =>
+            run("void", () => api.voidEnvelope(id, "Voided from staff console"))
+          }
+        >
+          Void
         </button>
       </div>
 
       <div className="split">
-        <div>
-          <div className="toolbar">
-            <button
-              type="button"
-              className={`btn ${placeMode === "signature" ? "" : "secondary"}`}
-              onClick={() =>
-                setPlaceMode((m) => (m === "signature" ? null : "signature"))
-              }
-            >
-              Place signature
-            </button>
-            <button
-              type="button"
-              className={`btn ${placeMode === "date" ? "" : "secondary"}`}
-              onClick={() => setPlaceMode((m) => (m === "date" ? null : "date"))}
-            >
-              Place date
-            </button>
-            <button
-              type="button"
-              className={`btn ${placeMode === "name" ? "" : "secondary"}`}
-              onClick={() => setPlaceMode((m) => (m === "name" ? null : "name"))}
-            >
-              Place name
-            </button>
-            <button
-              type="button"
-              className="btn secondary"
-              onClick={() => saveFields()}
-              disabled={saving}
-            >
-              {saving ? "Saving…" : "Save fields"}
-            </button>
+        <section className="panel">
+          <h2>Parties</h2>
+          <div className="form-grid">
+            {envelope.parties.map((party) => (
+              <div className="party-card" key={party.id}>
+                <div className="toolbar" style={{ margin: 0 }}>
+                  <strong>
+                    {party.role_label} · {party.signer_name}
+                  </strong>
+                  <span className={`badge ${party.status}`}>{party.status}</span>
+                </div>
+                <p className="meta">
+                  {party.company_name} · {party.signer_email}
+                </p>
+                {party.evidence_required ? (
+                  <p className="muted">Evidence gate required before sign</p>
+                ) : null}
+                <button
+                  type="button"
+                  className="btn secondary"
+                  onClick={() =>
+                    run(`link-${party.id}`, async () => {
+                      const result = await api.partyLink(id, party.id);
+                      setLinks((prev) => ({ ...prev, [party.id]: result.signingLink }));
+                    })
+                  }
+                >
+                  Mint / resend link
+                </button>
+                {links[party.id] ? (
+                  <p className="meta">
+                    <Link to={links[party.id].replace(/^https?:\/\/[^/]+/, "")}>
+                      Open signing room
+                    </Link>
+                  </p>
+                ) : null}
+              </div>
+            ))}
           </div>
-          <p className="muted">
-            Click the page to drop a field. Double-click a field to remove it.
-          </p>
-          <PdfViewer
-            url={docUrl}
-            fields={fields}
-            onFieldsChange={(next) => {
-              setFields(next);
-            }}
-            placeMode={placeMode}
-            activeSignerId={activeSignerId}
-          />
-        </div>
+        </section>
 
         <div className="grid">
           <section className="panel">
-            <h2>Signers</h2>
-            <div className="form-grid">
-              {envelope.signers.map((signer) => (
-                <button
-                  key={signer.id}
-                  type="button"
-                  className={`btn ${activeSignerId === signer.id ? "" : "secondary"}`}
-                  onClick={() => setActiveSignerId(signer.id)}
-                >
-                  {signer.name || "Signer"} · {signer.status}
-                </button>
-              ))}
-            </div>
-          </section>
-
-          <section className="panel">
-            <h2>Audit trail</h2>
+            <h2>Audit chain</h2>
+            {chain ? (
+              <p className={`meta ${chain.ok ? "" : "error"}`}>
+                {chain.ok
+                  ? `Verified · ${chain.checked} events`
+                  : `BROKEN · ${chain.broken.length} issues`}
+              </p>
+            ) : null}
             <ul className="audit-list">
-              {[...(envelope.audit || [])].reverse().map((entry) => (
+              {[...(envelope.events || [])].reverse().map((entry) => (
                 <li key={entry.id}>
-                  <strong>{entry.action}</strong>
-                  <span className="muted">{new Date(entry.at).toLocaleString()}</span>
-                  <span>{entry.detail}</span>
+                  <strong>{entry.event_type}</strong>
+                  <span className="muted">{new Date(entry.created_at).toLocaleString()}</span>
+                  <span className="muted">{entry.actor}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+          <section className="panel">
+            <h2>Local email outbox</h2>
+            <ul className="audit-list">
+              {(envelope.emails || []).map((mail) => (
+                <li key={mail.id}>
+                  <strong>{mail.template_type}</strong>
+                  <span className="muted">{mail.to_address}</span>
+                  <span>{mail.subject}</span>
                 </li>
               ))}
             </ul>
           </section>
         </div>
       </div>
-
-      {error ? <p className="error">{error}</p> : null}
     </div>
   );
 }

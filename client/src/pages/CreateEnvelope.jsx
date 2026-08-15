@@ -1,49 +1,54 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api.js";
 
-const blankSigner = () => ({ name: "", email: "" });
+const blankParty = (roleKey) => ({
+  roleKey,
+  company_name: "",
+  signer_name: "",
+  signer_email: "",
+});
 
 export default function CreateEnvelope() {
   const navigate = useNavigate();
+  const [bootstrap, setBootstrap] = useState(null);
+  const [entityId, setEntityId] = useState("");
+  const [templateId, setTemplateId] = useState("");
   const [title, setTitle] = useState("");
-  const [file, setFile] = useState(null);
-  const [signers, setSigners] = useState([blankSigner()]);
+  const [parties, setParties] = useState([
+    blankParty("company"),
+    blankParty("agency"),
+    blankParty("supplier"),
+  ]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  function updateSigner(index, key, value) {
-    setSigners((rows) =>
-      rows.map((row, i) => (i === index ? { ...row, [key]: value } : row))
+  useEffect(() => {
+    api.bootstrap().then((data) => {
+      setBootstrap(data);
+      setEntityId(data.entities[0]?.id || "");
+      setTemplateId(data.templates[0]?.id || "");
+      setTitle(data.templates[0]?.name || "");
+    });
+  }, []);
+
+  function updateParty(roleKey, key, value) {
+    setParties((rows) =>
+      rows.map((row) => (row.roleKey === roleKey ? { ...row, [key]: value } : row))
     );
   }
 
   async function onSubmit(e) {
     e.preventDefault();
-    setError("");
-    if (!file) {
-      setError("Choose a PDF to upload.");
-      return;
-    }
-    const cleaned = signers
-      .map((s) => ({
-        name: s.name.trim(),
-        email: s.email.trim(),
-      }))
-      .filter((s) => s.name || s.email);
-    if (cleaned.length === 0) {
-      setError("Add at least one signer name.");
-      return;
-    }
-
-    const body = new FormData();
-    body.append("document", file);
-    body.append("title", title.trim() || file.name);
-    body.append("signers", JSON.stringify(cleaned));
-
     setBusy(true);
+    setError("");
     try {
-      const envelope = await api.createEnvelope(body);
+      const envelope = await api.createEnvelope({
+        entityId,
+        templateId,
+        title,
+        parties,
+      });
       navigate(`/envelopes/${envelope.id}`);
     } catch (err) {
       setError(err.message);
@@ -52,82 +57,90 @@ export default function CreateEnvelope() {
     }
   }
 
+  if (!bootstrap) return <p className="muted">Loading…</p>;
+
   return (
     <div>
       <section className="hero-panel">
         <h1>New envelope</h1>
-        <p>Upload a PDF, name the signers, then place fields and send locally.</p>
+        <p>Assign company, agency, and supplier parties, then bake before sending.</p>
       </section>
-
       <form className="panel form-grid" onSubmit={onSubmit}>
         <label>
-          Document title
-          <input
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Offer letter, NDA, intake form…"
-          />
+          Entity
+          <select value={entityId} onChange={(e) => setEntityId(e.target.value)}>
+            {bootstrap.entities.map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.display_name} {e.domain_verified ? "" : "(unverified)"}
+              </option>
+            ))}
+          </select>
         </label>
-
         <label>
-          PDF file
-          <input
-            type="file"
-            accept="application/pdf"
-            onChange={(e) => setFile(e.target.files?.[0] || null)}
-          />
+          Template
+          <select
+            value={templateId}
+            onChange={(e) => {
+              setTemplateId(e.target.value);
+              const t = bootstrap.templates.find((x) => x.id === e.target.value);
+              if (t) setTitle(t.name);
+            }}
+          >
+            {bootstrap.templates.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Title
+          <input value={title} onChange={(e) => setTitle(e.target.value)} required />
         </label>
 
-        <div className="form-grid">
-          <strong>Signers</strong>
-          {signers.map((signer, index) => (
-            <div className="signer-row" key={index}>
+        {parties.map((party) => (
+          <div className="party-card" key={party.roleKey}>
+            <h3>{party.roleKey}</h3>
+            <div className="signer-row">
               <label>
-                Name
+                Company
                 <input
-                  type="text"
-                  value={signer.name}
-                  onChange={(e) => updateSigner(index, "name", e.target.value)}
-                  required={index === 0}
+                  value={party.company_name}
+                  onChange={(e) =>
+                    updateParty(party.roleKey, "company_name", e.target.value)
+                  }
+                  required
                 />
               </label>
               <label>
-                Email (optional)
+                Signer
+                <input
+                  value={party.signer_name}
+                  onChange={(e) =>
+                    updateParty(party.roleKey, "signer_name", e.target.value)
+                  }
+                  required
+                />
+              </label>
+              <label>
+                Email
                 <input
                   type="email"
-                  value={signer.email}
-                  onChange={(e) => updateSigner(index, "email", e.target.value)}
+                  value={party.signer_email}
+                  onChange={(e) =>
+                    updateParty(party.roleKey, "signer_email", e.target.value)
+                  }
+                  required
                 />
               </label>
-              <button
-                type="button"
-                className="btn secondary"
-                disabled={signers.length === 1}
-                onClick={() =>
-                  setSigners((rows) => rows.filter((_, i) => i !== index))
-                }
-              >
-                Remove
-              </button>
             </div>
-          ))}
-          <button
-            type="button"
-            className="btn secondary"
-            onClick={() => setSigners((rows) => [...rows, blankSigner()])}
-          >
-            Add signer
-          </button>
-        </div>
+          </div>
+        ))}
 
         {error ? <p className="error">{error}</p> : null}
-
-        <div className="toolbar" style={{ margin: 0 }}>
-          <button className="btn" type="submit" disabled={busy}>
-            {busy ? "Creating…" : "Create envelope"}
-          </button>
-        </div>
+        <button className="btn" type="submit" disabled={busy}>
+          {busy ? "Creating…" : "Create draft envelope"}
+        </button>
       </form>
     </div>
   );

@@ -2,11 +2,6 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api.js";
 
-function formatWhen(iso) {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleString();
-}
-
 export default function Dashboard() {
   const [envelopes, setEnvelopes] = useState([]);
   const [error, setError] = useState("");
@@ -32,28 +27,26 @@ export default function Dashboard() {
   return (
     <div>
       <section className="hero-panel">
-        <h1>Sign documents without leaving your machine.</h1>
+        <h1>Three-party envelopes, baked and auditable.</h1>
         <p>
-          Attest keeps PDFs, signatures, and audit trails on local disk — no
-          Google Drive, no GCS, no third-party signing cloud.
+          Local implementation of the Attest data model: entity branding, template
+          roles, bake immutability, evidence gates, and a hash-chained event log —
+          on disk + SQLite, no GCS.
         </p>
       </section>
 
       <div className="toolbar">
         <Link className="btn" to="/new">
-          Start an envelope
+          Create envelope
         </Link>
-        <span className="muted">Storage: ./server/data</span>
+        <span className="muted">Storage: server/data · DB: attest.sqlite</span>
       </div>
 
       {error ? <p className="error">{error}</p> : null}
-      {loading ? <p className="muted">Loading envelopes…</p> : null}
+      {loading ? <p className="muted">Loading…</p> : null}
 
       {!loading && envelopes.length === 0 ? (
-        <div className="empty">
-          No envelopes yet. Upload a PDF to create your first local signing
-          packet.
-        </div>
+        <div className="empty">No envelopes yet. Create one from the seeded MSA template.</div>
       ) : (
         <div className="envelope-list">
           {envelopes.map((env, i) => (
@@ -61,14 +54,13 @@ export default function Dashboard() {
               key={env.id}
               to={`/envelopes/${env.id}`}
               className="envelope-row"
-              style={{ animationDelay: `${Math.min(i, 8) * 0.05}s` }}
+              style={{ animationDelay: `${Math.min(i, 8) * 0.04}s` }}
             >
               <div>
-                <h3>{env.title}</h3>
+                <h3>{env.title || "Untitled"}</h3>
                 <div className="meta">
-                  {env.fileName} · updated {formatWhen(env.updatedAt)} ·{" "}
-                  {env.signers?.length || 0} signer
-                  {(env.signers?.length || 0) === 1 ? "" : "s"}
+                  {env.entity?.display_name || "Entity"} · {env.party_count} parties ·{" "}
+                  {new Date(env.created_at).toLocaleString()}
                 </div>
               </div>
               <span className={`badge ${env.status}`}>{env.status}</span>

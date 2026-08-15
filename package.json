@@ -2,7 +2,7 @@
   "name": "attest",
   "version": "0.1.0",
   "private": true,
-  "description": "Attest — local e-sign UI framework (Vite/React + Express, no cloud storage)",
+  "description": "Attest \u2014 local three-party e-sign framework (SQLite + disk, no Google/GCS)",
   "scripts": {
     "dev": "concurrently -n server,client -c teal,cyan \"npm run dev -w server\" \"npm run dev -w client\"",
     "build": "npm run build -w client",

@@ -1,22 +1,32 @@
 # Attest
 
-Local e-sign UI framework. Upload PDFs, place signature fields, capture drawn signatures, and keep every file plus audit trail on disk — **no Google / GCS / cloud object storage**.
+Local implementation of the **E-Signature Platform data model** (three-party company / agency / supplier signing) using **Vite + React + Express + SQLite + local disk**. No Google Identity, no GCS, no Cloud SQL.
 
-## Stack
+Specification: [`docs/esign-data-model.pdf`](docs/esign-data-model.pdf)
 
-- **client** — Vite + React (PDF.js viewer, signature pad)
-- **server** — Express API with `multer` uploads and `pdf-lib` stamping
-- **storage** — `server/data/` (`uploads/`, `signed/`, `db.json`)
+## What is implemented
 
-## Quick start
+- Entities with brand tokens, verified sending domain gate, email signature blocks
+- Seeded email templates (invitation / resend / reminder / turn / decline / void / completion) with merge-variable validation
+- Templates with `company` / `agency` / `supplier` roles, field ownership, and company evidence requirements
+- Envelope lifecycle: `draft → baking → ready → in_progress → completed` (+ void/decline)
+- Bake pipeline: snapshot hash → template version → assembled baked PDF + `baked_hash`
+- Sequential signing with hashed access tokens (raw token only in link)
+- Evidence gate for company role before signature
+- Signatures store consent text verbatim + `document_hash` must equal `baked_hash`
+- Append-only `events` table with hash chain verification
+- Local “email outbox” (`outbound_emails`) instead of a transactional ESP
+- Completion PDF + certificate artifacts on disk under `server/data/files`
+
+## Run
 
 ```bash
 npm install
 npm run dev
 ```
 
-- UI: http://localhost:5173  
-- API: http://localhost:8787  
+- UI: http://localhost:5173
+- API: http://localhost:8787
 
 Production:
 
@@ -25,16 +35,25 @@ npm run build
 npm start
 ```
 
-The Express server serves `client/dist` when `NODE_ENV=production`.
+## Demo path
 
-## Flow
+1. Open **Templates** / **Entities** to inspect the seeded Acme profile + MSA template
+2. **New envelope** → fill company/agency/supplier parties → create draft
+3. **Bake** → **Send first invitation**
+4. Use **Mint / resend link** per party (or the link returned by send) to open `/sign/:token`
+5. Company party must upload the four evidence files before signing
+6. After all three parties sign, open completed PDF + certificate
 
-1. **New envelope** — upload a PDF and add signers  
-2. **Place fields** — signature / date / name chips on the page  
-3. **Signing room** — draw a signature and apply it to the local PDF  
-4. **Audit trail** — events stored with the envelope record  
+## Local substitutions vs the brief
+
+| Brief | Local Attest |
+| --- | --- |
+| Cloud SQL (Postgres) | SQLite (`server/data/attest.sqlite`) |
+| GCS | `server/data/files/**` |
+| Google Identity | Seeded local staff user (no Google auth) |
+| Transactional email + DNS domains | Verified flag + local outbox log |
+| Companies House / HMRC APIs | Upload-only evidence path in seed |
 
 ## Notes
 
-- Prior agent artifact `attest-local-framework.tar.gz` was unavailable in this environment; this tree is a local Vite/React/Express rebuild without cloud storage.
-- Re-attach the original e-sign PDF if the UI should be matched pixel-for-pixel to that design.
+Immutable bake, role-scoped fields, evidence checklist, and hash-chained audit events are enforced in the API. Webhook delivery workers and full admin editors for assets/email templates are stubbed by seed data for this local framework pass.
