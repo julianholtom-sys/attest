@@ -85,9 +85,9 @@ Do **not** rely on Cloudflare quick tunnels for demos; they were returning 530 w
 
 ## Known issues / next
 
-- [ ] Phone tunnel: user reported “No tunnel here” on localhost.run — investigate/restart watchdog; confirm `TUNNEL_URL.txt` matches a URL that returns 200 for `/api/health`.
+- [x] Phone tunnel “No tunnel here”: usually an **stale `*.lhr.life` hostname** after SSH restarted. Restart `scripts/keep-tunnel-alive.sh` and use the new URL from `TUNNEL_URL.txt` (old links do not recover).
 - [ ] Merge outstanding feature PRs to `main` if not already merged.
-- [ ] Optional: named/stable public host (Cloudflare named tunnel or localhost.run forever-free with SSH key) if ephemeral `*.lhr.life` URLs remain too brittle.
+- [ ] Optional: named/stable public host (Cloudflare named tunnel or localhost.run forever-free with SSH key) if ephemeral `*.lhr.life` URLs remain too brittle for demos.
 - [ ] Prefer Union Payroll as default selected sending company on New contract.
 
 ## Continuity for humans (any device)
