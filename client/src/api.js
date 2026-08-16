@@ -30,6 +30,10 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }),
+  brandPack: (entityId, templateId) =>
+    request(
+      `/api/brand-pack?entityId=${encodeURIComponent(entityId)}&templateId=${encodeURIComponent(templateId)}`
+    ),
   bakeEnvelope: (id) => request(`/api/envelopes/${id}/bake`, { method: "POST" }),
   sendEnvelope: (id) => request(`/api/envelopes/${id}/send`, { method: "POST" }),
   voidEnvelope: (id, reason) =>

@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { db, newId, now, sha256, parseJson } from "./db.js";
 import { appendEvent, listEvents, verifyEventChain } from "./events.js";
-import { bakeEnvelope } from "./bake.js";
+import { bakeEnvelope, resolveBrandPack } from "./bake.js";
 import {
   CONSENT_TEXT,
   applySignatureAndCompleteParty,
@@ -88,14 +88,43 @@ function getEnvelopeBundle(id) {
   const events = listEvents(id);
   const emails = listOutboundEmails(id);
   const actionable = getActionableParty(id);
+  const template = envelope.template_id
+    ? db.prepare("SELECT * FROM templates WHERE id = ?").get(envelope.template_id)
+    : null;
+  const brand = resolveBrandPack(envelope.entity_id, template || { industry: envelope.industry });
+  const appendixIds = parseJson(envelope.appendix_ids_json, []);
+  const appendices = appendixIds.length
+    ? db
+        .prepare(
+          `SELECT * FROM appendices WHERE id IN (${appendixIds.map(() => "?").join(",")})`
+        )
+        .all(...appendixIds)
+    : brand.appendices;
+  const front = envelope.front_cover_id
+    ? db.prepare("SELECT * FROM entity_assets WHERE id = ?").get(envelope.front_cover_id)
+    : brand.front;
+  const back = envelope.back_cover_id
+    ? db.prepare("SELECT * FROM entity_assets WHERE id = ?").get(envelope.back_cover_id)
+    : brand.back;
+  const logo = envelope.logo_asset_id
+    ? db.prepare("SELECT * FROM entity_assets WHERE id = ?").get(envelope.logo_asset_id)
+    : brand.logo;
   return {
     ...envelope,
     entity,
+    template,
     parties,
     documents,
     events,
     emails,
     actionable_party_id: actionable?.id || null,
+    auto_pack: {
+      front,
+      back,
+      logo,
+      appendices,
+      industry: envelope.industry || brand.industry,
+    },
   };
 }
 
@@ -112,10 +141,54 @@ app.get("/api/health", (_req, res) => {
 app.get("/api/bootstrap", (req, res) => {
   const entities = db.prepare("SELECT * FROM entities ORDER BY display_name").all().map(serializeEntity);
   const templates = db
-    .prepare("SELECT * FROM templates WHERE is_active = 1 ORDER BY created_at DESC")
+    .prepare("SELECT * FROM templates WHERE is_active = 1 ORDER BY industry, name")
     .all();
   const users = db.prepare("SELECT id, email, name, role FROM users WHERE is_active = 1").all();
-  res.json({ entities, templates, users, baseUrl: publicBase(req) });
+  const appendices = db
+    .prepare("SELECT id, entity_id, industry, name, description, is_active FROM appendices WHERE is_active = 1 ORDER BY industry, name")
+    .all();
+  const assets = db
+    .prepare("SELECT id, entity_id, kind, name, mime, page_size, is_active FROM entity_assets WHERE is_active = 1 ORDER BY kind, name")
+    .all();
+  const industries = [...new Set(templates.map((t) => t.industry).filter(Boolean))];
+  res.json({
+    entities,
+    templates,
+    users,
+    appendices,
+    assets,
+    industries,
+    baseUrl: publicBase(req),
+  });
+});
+
+app.get("/api/brand-pack", (req, res) => {
+  const entityId = req.query.entityId;
+  const templateId = req.query.templateId;
+  if (!entityId || !templateId) {
+    return res.status(400).json({ error: "entityId and templateId required" });
+  }
+  const template = db.prepare("SELECT * FROM templates WHERE id = ?").get(templateId);
+  if (!template) return res.status(404).json({ error: "Template not found" });
+  const pack = resolveBrandPack(entityId, template);
+  res.json({
+    industry: pack.industry,
+    front: pack.front
+      ? { id: pack.front.id, name: pack.front.name, kind: pack.front.kind }
+      : null,
+    back: pack.back
+      ? { id: pack.back.id, name: pack.back.name, kind: pack.back.kind }
+      : null,
+    logo: pack.logo
+      ? { id: pack.logo.id, name: pack.logo.name, kind: pack.logo.kind }
+      : null,
+    appendices: pack.appendices.map((a) => ({
+      id: a.id,
+      name: a.name,
+      industry: a.industry,
+      description: a.description,
+    })),
+  });
 });
 
 app.get("/api/entities", (_req, res) => {
@@ -186,6 +259,7 @@ app.post("/api/envelopes", (req, res) => {
       entityId,
       templateId,
       title,
+      preparedOn,
       externalClientRef,
       parties,
       reminderFrequency = "none",
@@ -197,6 +271,9 @@ app.post("/api/envelopes", (req, res) => {
     }
     const template = db.prepare("SELECT * FROM templates WHERE id = ?").get(templateId);
     if (!template) return res.status(400).json({ error: "Unknown template" });
+    if (!preparedOn || !/^\d{4}-\d{2}-\d{2}$/.test(preparedOn)) {
+      return res.status(400).json({ error: "preparedOn (YYYY-MM-DD) is required" });
+    }
     const roles = db
       .prepare("SELECT * FROM template_roles WHERE template_id = ? ORDER BY signing_order")
       .all(templateId);
@@ -207,19 +284,28 @@ app.post("/api/envelopes", (req, res) => {
       return res.status(400).json({ error: "Provide exactly three parties" });
     }
 
+    const brand = resolveBrandPack(entityId, template);
     const user = db.prepare("SELECT id FROM users WHERE role = 'admin' LIMIT 1").get();
     const envelopeId = newId();
     db.prepare(
       `INSERT INTO envelopes (
-        id, entity_id, status, signing_mode, reminder_frequency, max_auto_reminders,
-        external_client_ref, title, created_by, created_at
-      ) VALUES (?, ?, 'draft', 'sequential', ?, 5, ?, ?, ?, ?)`
+        id, entity_id, template_id, status, signing_mode, reminder_frequency, max_auto_reminders,
+        external_client_ref, title, prepared_on, industry, front_cover_id, back_cover_id,
+        logo_asset_id, appendix_ids_json, created_by, created_at
+      ) VALUES (?, ?, ?, 'draft', 'sequential', ?, 5, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       envelopeId,
       entityId,
+      templateId,
       reminderFrequency,
       externalClientRef || null,
       title || template.name,
+      preparedOn,
+      brand.industry || template.industry || null,
+      brand.front?.id || null,
+      brand.back?.id || null,
+      brand.logo?.id || null,
+      JSON.stringify(brand.appendices.map((a) => a.id)),
       user?.id || null,
       now()
     );
@@ -249,7 +335,16 @@ app.post("/api/envelopes", (req, res) => {
       envelopeId,
       actor: user ? `staff:${user.id}` : "staff",
       eventType: "envelope_created",
-      metadata: { template_id: templateId, title: title || template.name },
+      metadata: {
+        template_id: templateId,
+        title: title || template.name,
+        prepared_on: preparedOn,
+        industry: brand.industry,
+        auto_front_cover_id: brand.front?.id || null,
+        auto_back_cover_id: brand.back?.id || null,
+        auto_logo_asset_id: brand.logo?.id || null,
+        auto_appendix_ids: brand.appendices.map((a) => a.id),
+      },
     });
 
     res.status(201).json(getEnvelopeBundle(envelopeId));

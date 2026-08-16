@@ -1,18 +1,15 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-import { db, newId, now, sha256 } from "./db.js";
+import { db, newId, now, sha256, parseJson } from "./db.js";
 import { appendEvent } from "./events.js";
 import { readBytes, writeBytes } from "./storage.js";
 
 async function loadOrCreateSourcePdf(template) {
-  // Local mode: source_url may be a local storage_ref ("uploads/...") or absolute path key.
-  // For seed templates we store a snapshot file and point source_url at local://uploads/...
   let bytes;
   if (template.source_url.startsWith("local://")) {
     bytes = readBytes(template.source_url.replace("local://", ""));
   } else {
-    // Minimal stub PDF if remote fetch is unavailable in local mode
     const doc = await PDFDocument.create();
-    const page = doc.addPage([595.28, 841.89]); // A4
+    const page = doc.addPage([595.28, 841.89]);
     const font = await doc.embedFont(StandardFonts.Helvetica);
     page.drawText(template.name, { x: 50, y: 780, size: 18, font });
     page.drawText("Local snapshot (source URL not fetched in local mode).", {
@@ -24,6 +21,64 @@ async function loadOrCreateSourcePdf(template) {
     bytes = Buffer.from(await doc.save());
   }
   return bytes;
+}
+
+async function pdfFromAsset(asset) {
+  if (!asset) return null;
+  const bytes = readBytes(asset.storage_ref);
+  if ((asset.mime || "").includes("pdf") || asset.storage_ref.endsWith(".pdf")) {
+    return PDFDocument.load(bytes);
+  }
+  // PNG/JPEG cover → single A4 page
+  const doc = await PDFDocument.create();
+  const page = doc.addPage([595.28, 841.89]);
+  let image;
+  if ((asset.mime || "").includes("png") || asset.storage_ref.endsWith(".png")) {
+    image = await doc.embedPng(bytes);
+  } else {
+    image = await doc.embedJpg(bytes);
+  }
+  const { width, height } = page.getSize();
+  page.drawImage(image, { x: 0, y: 0, width, height });
+  return doc;
+}
+
+function activeAsset(entityId, kind) {
+  return db
+    .prepare(
+      `SELECT * FROM entity_assets
+       WHERE entity_id = ? AND kind = ? AND is_active = 1
+       ORDER BY created_at DESC LIMIT 1`
+    )
+    .get(entityId, kind);
+}
+
+function appendicesForIndustry(entityId, industry) {
+  if (!industry) return [];
+  return db
+    .prepare(
+      `SELECT * FROM appendices
+       WHERE is_active = 1
+         AND industry = ?
+         AND (entity_id IS NULL OR entity_id = ?)
+       ORDER BY name ASC`
+    )
+    .all(industry, entityId);
+}
+
+export function resolveBrandPack(entityId, template) {
+  const front =
+    (template?.default_front_cover &&
+      db.prepare("SELECT * FROM entity_assets WHERE id = ?").get(template.default_front_cover)) ||
+    activeAsset(entityId, "front_cover");
+  const back =
+    (template?.default_back_cover &&
+      db.prepare("SELECT * FROM entity_assets WHERE id = ?").get(template.default_back_cover)) ||
+    activeAsset(entityId, "back_cover");
+  const logo = activeAsset(entityId, "logo");
+  const industry = template?.industry || null;
+  const appendices = appendicesForIndustry(entityId, industry);
+  return { front, back, logo, industry, appendices };
 }
 
 export async function bakeEnvelope(envelopeId, { actor = "system" } = {}) {
@@ -56,13 +111,11 @@ export async function bakeEnvelope(envelopeId, { actor = "system" } = {}) {
       throw new Error("All three parties (company/agency/supplier) must be assigned");
     }
 
-    // Resolve template: envelopes in draft may only have a linked template via parties' roles
-    const role = db
-      .prepare("SELECT * FROM template_roles WHERE id = ?")
-      .get(parties[0].role_id);
-    const template = db
-      .prepare("SELECT * FROM templates WHERE id = ?")
-      .get(role.template_id);
+    const templateId =
+      envelope.template_id ||
+      db.prepare("SELECT template_id FROM template_roles WHERE id = ?").get(parties[0].role_id)
+        ?.template_id;
+    const template = db.prepare("SELECT * FROM templates WHERE id = ?").get(templateId);
     if (!template) throw new Error("Template missing");
 
     const fields = db
@@ -72,6 +125,7 @@ export async function bakeEnvelope(envelopeId, { actor = "system" } = {}) {
       throw new Error("All role fields must have positions");
     }
 
+    const brand = resolveBrandPack(entity.id, template);
     const sourceBytes = await loadOrCreateSourcePdf(template);
     const contentHash = sha256(sourceBytes);
 
@@ -115,29 +169,78 @@ export async function bakeEnvelope(envelopeId, { actor = "system" } = {}) {
       );
     }
 
-    const snapshotBytes = readBytes(version.storage_ref);
-    const bakedDoc = await PDFDocument.load(snapshotBytes);
+    // Assemble: front cover + contract + industry appendices + back cover
+    const bakedDoc = await PDFDocument.create();
     const font = await bakedDoc.embedFont(StandardFonts.Helvetica);
-    const pages = bakedDoc.getPages();
-    const first = pages[0];
+    const bold = await bakedDoc.embedFont(StandardFonts.HelveticaBold);
 
-    // Stamp entity legal details into footer of first page
-    first.drawText(
-      `${entity.legal_name} · ${entity.company_number} · ${entity.registered_office}`,
-      {
-        x: 40,
-        y: 28,
-        size: 8,
-        font,
-        color: rgb(0.25, 0.25, 0.25),
-      }
+    const frontDoc = await pdfFromAsset(brand.front);
+    if (frontDoc) {
+      const pages = await bakedDoc.copyPages(frontDoc, frontDoc.getPageIndices());
+      pages.forEach((p) => bakedDoc.addPage(p));
+    }
+
+    const contractDoc = await PDFDocument.load(readBytes(version.storage_ref));
+    const contractStartIndex = bakedDoc.getPageCount();
+    const contractPages = await bakedDoc.copyPages(
+      contractDoc,
+      contractDoc.getPageIndices()
     );
+    contractPages.forEach((p) => bakedDoc.addPage(p));
+    const contractPageOffset = contractStartIndex;
 
-    // Overlay field placeholders
+    // Stamp legal footer + prepared/issued metadata + logo on first contract page
+    const firstContract = bakedDoc.getPages()[contractStartIndex];
+    if (firstContract) {
+      firstContract.drawText(
+        `${entity.legal_name} · ${entity.company_number} · ${entity.registered_office}`,
+        {
+          x: 40,
+          y: 28,
+          size: 8,
+          font,
+          color: rgb(0.25, 0.25, 0.25),
+        }
+      );
+      const meta = [
+        envelope.prepared_on ? `Prepared ${envelope.prepared_on}` : null,
+        envelope.issued_at ? `Issued ${String(envelope.issued_at).slice(0, 10)}` : "Issued on send",
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      if (meta) {
+        firstContract.drawText(meta, {
+          x: 40,
+          y: 40,
+          size: 8,
+          font,
+          color: rgb(0.25, 0.25, 0.25),
+        });
+      }
+      if (brand.logo) {
+        try {
+          const logoBytes = readBytes(brand.logo.storage_ref);
+          const logoImage =
+            (brand.logo.mime || "").includes("png") || brand.logo.storage_ref.endsWith(".png")
+              ? await bakedDoc.embedPng(logoBytes)
+              : await bakedDoc.embedJpg(logoBytes);
+          firstContract.drawImage(logoImage, {
+            x: 480,
+            y: 780,
+            width: 70,
+            height: 28,
+          });
+        } catch {
+          /* logo optional */
+        }
+      }
+    }
+
+    // Field placeholders are positioned on the contract page indices (0-based within contract)
     for (const field of fields) {
-      const page = pages[Math.min(field.page, pages.length - 1)];
-      const { width, height } = page.getSize();
-      // template fields stored in points from bottom-left in PDF space
+      const page = bakedDoc.getPages()[
+        Math.min(contractStartIndex + (field.page || 0), bakedDoc.getPageCount() - 1)
+      ];
       const x = Number(field.x);
       const y = Number(field.y);
       const w = Number(field.w);
@@ -160,11 +263,26 @@ export async function bakeEnvelope(envelopeId, { actor = "system" } = {}) {
         font,
         color: rgb(0.05, 0.35, 0.32),
       });
-      // silence unused width
-      void width;
-      void height;
     }
 
+    for (const appendix of brand.appendices) {
+      const appendixDoc = await PDFDocument.load(readBytes(appendix.storage_ref));
+      const pages = await bakedDoc.copyPages(appendixDoc, appendixDoc.getPageIndices());
+      pages.forEach((p) => bakedDoc.addPage(p));
+    }
+
+    const backDoc = await pdfFromAsset(brand.back);
+    if (backDoc) {
+      const pages = await bakedDoc.copyPages(backDoc, backDoc.getPageIndices());
+      pages.forEach((p) => bakedDoc.addPage(p));
+    }
+
+    // If somehow empty, keep contract only
+    if (bakedDoc.getPageCount() === 0) {
+      throw new Error("Bake produced an empty document");
+    }
+
+    void bold;
     const bakedBytes = Buffer.from(await bakedDoc.save());
     const bakedFile = writeBytes("baked", `${envelopeId}-baked.pdf`, bakedBytes);
 
@@ -184,12 +302,31 @@ export async function bakeEnvelope(envelopeId, { actor = "system" } = {}) {
     db.prepare(
       `UPDATE envelopes SET
         status = 'ready',
+        template_id = ?,
         template_version_id = ?,
         baked_document_id = ?,
         baked_hash = ?,
+        front_cover_id = ?,
+        back_cover_id = ?,
+        logo_asset_id = ?,
+        industry = ?,
+        appendix_ids_json = ?,
+        contract_page_offset = ?,
         bake_error = NULL
        WHERE id = ?`
-    ).run(version.id, docId, bakedFile.sha256, envelopeId);
+    ).run(
+      template.id,
+      version.id,
+      docId,
+      bakedFile.sha256,
+      brand.front?.id || null,
+      brand.back?.id || null,
+      brand.logo?.id || null,
+      brand.industry || envelope.industry || null,
+      JSON.stringify(brand.appendices.map((a) => a.id)),
+      contractPageOffset,
+      envelopeId
+    );
 
     appendEvent({
       envelopeId,
@@ -199,6 +336,11 @@ export async function bakeEnvelope(envelopeId, { actor = "system" } = {}) {
         baked_hash: bakedFile.sha256,
         template_version_id: version.id,
         document_id: docId,
+        front_cover_id: brand.front?.id || null,
+        back_cover_id: brand.back?.id || null,
+        logo_asset_id: brand.logo?.id || null,
+        appendix_ids: brand.appendices.map((a) => a.id),
+        prepared_on: envelope.prepared_on || null,
       },
     });
 
@@ -210,3 +352,5 @@ export async function bakeEnvelope(envelopeId, { actor = "system" } = {}) {
     throw err;
   }
 }
+
+export { parseJson };

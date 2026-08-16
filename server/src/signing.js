@@ -145,9 +145,15 @@ export function startSigningInvites(envelopeId, baseUrl, actor = "staff") {
   }
   if (!envelope.baked_hash) throw new Error("Envelope is not baked");
 
+  const issuedAt = now();
+  db.prepare(
+    "UPDATE envelopes SET issued_at = COALESCE(issued_at, ?) WHERE id = ?"
+  ).run(issuedAt, envelopeId);
+
   const first = getActionableParty(envelopeId);
   if (!first) throw new Error("No actionable party");
-  return inviteParty(envelopeId, first.id, { baseUrl, actor });
+  const result = inviteParty(envelopeId, first.id, { baseUrl, actor });
+  return { ...result, issuedAt };
 }
 
 export async function applySignatureAndCompleteParty({
@@ -317,6 +323,7 @@ export async function finalizeEnvelope(envelopeId) {
   const pdf = await PDFDocument.load(bakedBytes);
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const pages = pdf.getPages();
+  const pageOffset = Number(envelope.contract_page_offset || 0);
 
   const signatures = db
     .prepare("SELECT * FROM signatures WHERE envelope_id = ?")
@@ -333,7 +340,7 @@ export async function finalizeEnvelope(envelopeId) {
     const pngBytes = readBytes(sig.signature_asset_ref);
     const image = await pdf.embedPng(pngBytes);
     for (const field of fields) {
-      const page = pages[Math.min(field.page, pages.length - 1)];
+      const page = pages[Math.min(pageOffset + (field.page || 0), pages.length - 1)];
       page.drawImage(image, {
         x: Number(field.x),
         y: Number(field.y),
@@ -354,7 +361,7 @@ export async function finalizeEnvelope(envelopeId) {
     .all(envelopeId);
   for (const v of values) {
     if (["signature", "initials", "attachment"].includes(v.field_type)) continue;
-    const page = pages[Math.min(v.page, pages.length - 1)];
+    const page = pages[Math.min(pageOffset + (v.page || 0), pages.length - 1)];
     page.drawText(String(v.value || ""), {
       x: Number(v.x) + 2,
       y: Number(v.y) + 4,

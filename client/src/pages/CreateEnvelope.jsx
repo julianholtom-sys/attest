@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api.js";
 
@@ -9,12 +9,19 @@ const blankParty = (roleKey) => ({
   signer_email: "",
 });
 
+function todayISO() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 export default function CreateEnvelope() {
   const navigate = useNavigate();
   const [bootstrap, setBootstrap] = useState(null);
   const [entityId, setEntityId] = useState("");
+  const [industry, setIndustry] = useState("");
   const [templateId, setTemplateId] = useState("");
   const [title, setTitle] = useState("");
+  const [preparedOn, setPreparedOn] = useState(todayISO());
+  const [pack, setPack] = useState(null);
   const [parties, setParties] = useState([
     blankParty("company"),
     blankParty("agency"),
@@ -26,11 +33,40 @@ export default function CreateEnvelope() {
   useEffect(() => {
     api.bootstrap().then((data) => {
       setBootstrap(data);
-      setEntityId(data.entities[0]?.id || "");
-      setTemplateId(data.templates[0]?.id || "");
-      setTitle(data.templates[0]?.name || "");
+      const entity = data.entities[0]?.id || "";
+      setEntityId(entity);
+      const firstIndustry = data.industries[0] || data.templates[0]?.industry || "";
+      setIndustry(firstIndustry);
+      const firstTemplate =
+        data.templates.find((t) => t.industry === firstIndustry) || data.templates[0];
+      setTemplateId(firstTemplate?.id || "");
+      setTitle(firstTemplate?.name || "");
     });
   }, []);
+
+  const contracts = useMemo(() => {
+    if (!bootstrap) return [];
+    return bootstrap.templates.filter((t) => !industry || t.industry === industry);
+  }, [bootstrap, industry]);
+
+  useEffect(() => {
+    if (!entityId || !templateId) {
+      setPack(null);
+      return undefined;
+    }
+    let alive = true;
+    api
+      .brandPack(entityId, templateId)
+      .then((data) => {
+        if (alive) setPack(data);
+      })
+      .catch(() => {
+        if (alive) setPack(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [entityId, templateId]);
 
   function updateParty(roleKey, key, value) {
     setParties((rows) =>
@@ -47,6 +83,7 @@ export default function CreateEnvelope() {
         entityId,
         templateId,
         title,
+        preparedOn,
         parties,
       });
       navigate(`/envelopes/${envelope.id}`);
@@ -63,11 +100,14 @@ export default function CreateEnvelope() {
     <div>
       <section className="hero-panel">
         <h1>New envelope</h1>
-        <p>Assign company, agency, and supplier parties, then bake before sending.</p>
+        <p>
+          Pick industry and contract. Covers, logo, and industry appendices apply
+          automatically from the sending company brand pack.
+        </p>
       </section>
       <form className="panel form-grid" onSubmit={onSubmit}>
         <label>
-          Entity
+          Sending entity
           <select value={entityId} onChange={(e) => setEntityId(e.target.value)}>
             {bootstrap.entities.map((e) => (
               <option key={e.id} value={e.id}>
@@ -76,8 +116,31 @@ export default function CreateEnvelope() {
             ))}
           </select>
         </label>
+
         <label>
-          Template
+          Industry
+          <select
+            value={industry}
+            onChange={(e) => {
+              const next = e.target.value;
+              setIndustry(next);
+              const first = bootstrap.templates.find((t) => t.industry === next);
+              if (first) {
+                setTemplateId(first.id);
+                setTitle(first.name);
+              }
+            }}
+          >
+            {bootstrap.industries.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          Contract
           <select
             value={templateId}
             onChange={(e) => {
@@ -86,17 +149,66 @@ export default function CreateEnvelope() {
               if (t) setTitle(t.name);
             }}
           >
-            {bootstrap.templates.map((t) => (
+            {contracts.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.name}
               </option>
             ))}
           </select>
         </label>
+
         <label>
-          Title
+          Envelope title
           <input value={title} onChange={(e) => setTitle(e.target.value)} required />
         </label>
+
+        <label>
+          Date contract originally prepared
+          <input
+            type="date"
+            value={preparedOn}
+            onChange={(e) => setPreparedOn(e.target.value)}
+            required
+          />
+        </label>
+
+        <p className="muted">
+          Issued date is set automatically to the day the envelope is sent.
+        </p>
+
+        <section className="party-card">
+          <h3>Auto brand pack</h3>
+          {!pack ? (
+            <p className="muted">Resolving covers and appendices…</p>
+          ) : (
+            <ul className="audit-list">
+              <li>
+                <strong>Industry</strong>
+                <span>{pack.industry || "—"}</span>
+              </li>
+              <li>
+                <strong>Front cover</strong>
+                <span>{pack.front?.name || "None configured"}</span>
+              </li>
+              <li>
+                <strong>Back cover</strong>
+                <span>{pack.back?.name || "None configured"}</span>
+              </li>
+              <li>
+                <strong>Logo</strong>
+                <span>{pack.logo?.name || "None configured"}</span>
+              </li>
+              <li>
+                <strong>Appendices</strong>
+                <span>
+                  {pack.appendices?.length
+                    ? pack.appendices.map((a) => a.name).join(", ")
+                    : "None for this industry"}
+                </span>
+              </li>
+            </ul>
+          )}
+        </section>
 
         {parties.map((party) => (
           <div className="party-card" key={party.roleKey}>
@@ -138,7 +250,7 @@ export default function CreateEnvelope() {
         ))}
 
         {error ? <p className="error">{error}</p> : null}
-        <button className="btn" type="submit" disabled={busy}>
+        <button className="btn" type="submit" disabled={busy || !templateId}>
           {busy ? "Creating…" : "Create draft envelope"}
         </button>
       </form>

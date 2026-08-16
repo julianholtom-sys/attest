@@ -43,9 +43,14 @@ export default function EnvelopeDetail() {
         <p>
           {envelope.entity?.display_name} ·{" "}
           <span className={`badge ${envelope.status}`}>{envelope.status}</span>
+          {envelope.industry ? <span className="muted"> · {envelope.industry}</span> : null}
           {envelope.baked_hash ? (
             <span className="muted"> · bake {envelope.baked_hash.slice(0, 12)}…</span>
           ) : null}
+        </p>
+        <p className="meta">
+          Prepared {envelope.prepared_on || "—"} · Issued{" "}
+          {envelope.issued_at ? String(envelope.issued_at).slice(0, 10) : "on send"}
         </p>
       </section>
 
@@ -95,6 +100,30 @@ export default function EnvelopeDetail() {
           Void
         </button>
       </div>
+
+      <section className="panel" style={{ marginBottom: "1.25rem" }}>
+        <h2>Auto-applied pack</h2>
+        <ul className="audit-list">
+          <li>
+            <strong>Front cover</strong>
+            <span>{envelope.auto_pack?.front?.name || "—"}</span>
+          </li>
+          <li>
+            <strong>Back cover</strong>
+            <span>{envelope.auto_pack?.back?.name || "—"}</span>
+          </li>
+          <li>
+            <strong>Logo</strong>
+            <span>{envelope.auto_pack?.logo?.name || "—"}</span>
+          </li>
+          <li>
+            <strong>Appendices</strong>
+            <span>
+              {(envelope.auto_pack?.appendices || []).map((a) => a.name).join(", ") || "—"}
+            </span>
+          </li>
+        </ul>
+      </section>
 
       <div className="split">
         <section className="panel">

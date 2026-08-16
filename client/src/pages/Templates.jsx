@@ -42,7 +42,9 @@ export default function Templates() {
             >
               <div>
                 <h3>{t.name}</h3>
-                <div className="meta">{t.source_url}</div>
+                <div className="meta">
+                  {t.industry || "general"} · {t.description || t.source_url}
+                </div>
               </div>
               <span className="badge draft">{t.roles?.length || 0} roles</span>
             </button>
