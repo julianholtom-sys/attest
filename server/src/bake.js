@@ -67,14 +67,9 @@ function appendicesForIndustry(entityId, industry) {
 }
 
 export function resolveBrandPack(entityId, template) {
-  const front =
-    (template?.default_front_cover &&
-      db.prepare("SELECT * FROM entity_assets WHERE id = ?").get(template.default_front_cover)) ||
-    activeAsset(entityId, "front_cover");
-  const back =
-    (template?.default_back_cover &&
-      db.prepare("SELECT * FROM entity_assets WHERE id = ?").get(template.default_back_cover)) ||
-    activeAsset(entityId, "back_cover");
+  // Covers/logo always come from the sending company's setup (active assets).
+  const front = activeAsset(entityId, "front_cover");
+  const back = activeAsset(entityId, "back_cover");
   const logo = activeAsset(entityId, "logo");
   const industry = template?.industry || null;
   const appendices = appendicesForIndustry(entityId, industry);

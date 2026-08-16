@@ -2,7 +2,6 @@ import { db, newId, now } from "./db.js";
 import { seedDefaultEmailTemplates } from "./mail.js";
 import { writeBytes } from "./storage.js";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-import { appendEvent } from "./events.js";
 import { migrate } from "./migrate.js";
 
 async function makePdf({ title, subtitle, lines = [], footer }) {
@@ -147,21 +146,26 @@ function addRolesAndFields(templateId, withEvidence) {
   return roleIds;
 }
 
-async function ensureEntityBrand(entityId) {
+async function ensureEntityBrand(entityId, brandSpec) {
   const existing = db
     .prepare("SELECT id FROM entity_assets WHERE entity_id = ? LIMIT 1")
     .get(entityId);
   if (existing) return;
 
+  const entity = db.prepare("SELECT * FROM entities WHERE id = ?").get(entityId);
+  const label = brandSpec?.label || entity.display_name;
+  const frontColor = brandSpec?.frontColor || [0.05, 0.45, 0.44];
+  const backColor = brandSpec?.backColor || [0.06, 0.14, 0.17];
+
   const front = writeBytes(
     "assets",
     `${entityId}-front.pdf`,
-    await makeCoverPdf("Acme Front Cover", [0.05, 0.45, 0.44])
+    await makeCoverPdf(`${label} Front Cover`, frontColor)
   );
   const back = writeBytes(
     "assets",
     `${entityId}-back.pdf`,
-    await makeCoverPdf("Acme Back Cover", [0.06, 0.14, 0.17])
+    await makeCoverPdf(`${label} Back Cover`, backColor)
   );
   const logo = writeBytes("assets", `${entityId}-logo.png`, await makeLogoPng());
 
@@ -173,44 +177,45 @@ async function ensureEntityBrand(entityId) {
       id, entity_id, kind, name, storage_ref, mime, page_size, is_active, created_at
     ) VALUES (?, ?, ?, ?, ?, ?, 'A4', 1, ?)`
   );
-  insert.run(frontId, entityId, "front_cover", "Formal Teal Front", front.storageRef, "application/pdf", now());
-  insert.run(backId, entityId, "back_cover", "Formal Ink Back", back.storageRef, "application/pdf", now());
-  insert.run(logoId, entityId, "logo", "Acme Logo", logo.storageRef, "image/png", now());
+  insert.run(
+    frontId,
+    entityId,
+    "front_cover",
+    `${label} Front`,
+    front.storageRef,
+    "application/pdf",
+    now()
+  );
+  insert.run(
+    backId,
+    entityId,
+    "back_cover",
+    `${label} Back`,
+    back.storageRef,
+    "application/pdf",
+    now()
+  );
+  insert.run(
+    logoId,
+    entityId,
+    "logo",
+    `${label} Logo`,
+    logo.storageRef,
+    "image/png",
+    now()
+  );
 
-  const entity = db.prepare("SELECT brand_json FROM entities WHERE id = ?").get(entityId);
   const brand = JSON.parse(entity.brand_json || "{}");
   brand.logo_asset_id = logoId;
+  if (brandSpec?.primary) brand.primary = brandSpec.primary;
+  if (brandSpec?.secondary) brand.secondary = brandSpec.secondary;
   db.prepare("UPDATE entities SET brand_json = ? WHERE id = ?").run(
     JSON.stringify(brand),
     entityId
   );
-
-  // Point active templates at default covers
-  db.prepare(
-    `UPDATE templates SET default_front_cover = ?, default_back_cover = ?
-     WHERE entity_id = ? AND default_front_cover IS NULL`
-  ).run(frontId, backId, entityId);
 }
 
-async function ensureCatalog(entityId) {
-  const count = db.prepare("SELECT COUNT(*) AS c FROM templates").get().c;
-  if (count >= 3 && db.prepare("SELECT COUNT(*) AS c FROM appendices").get().c >= 2) {
-    await ensureEntityBrand(entityId);
-    return;
-  }
-
-  await ensureEntityBrand(entityId);
-  const front = db
-    .prepare(
-      "SELECT id FROM entity_assets WHERE entity_id = ? AND kind = 'front_cover' LIMIT 1"
-    )
-    .get(entityId);
-  const back = db
-    .prepare(
-      "SELECT id FROM entity_assets WHERE entity_id = ? AND kind = 'back_cover' LIMIT 1"
-    )
-    .get(entityId);
-
+async function ensureSharedCatalog() {
   const contracts = [
     {
       industry: "construction",
@@ -230,10 +235,18 @@ async function ensureCatalog(entityId) {
   ];
 
   for (const c of contracts) {
-    const exists = db
-      .prepare("SELECT id FROM templates WHERE name = ? AND entity_id = ?")
-      .get(c.name, entityId);
-    if (exists) continue;
+    const exists = db.prepare("SELECT id FROM templates WHERE name = ?").get(c.name);
+    if (exists) {
+      db.prepare(
+        `UPDATE templates SET industry = COALESCE(industry, ?),
+          description = COALESCE(description, ?),
+          entity_id = NULL,
+          default_front_cover = NULL,
+          default_back_cover = NULL
+         WHERE id = ?`
+      ).run(c.industry, c.description, exists.id);
+      continue;
+    }
     const pdf = await makePdf({
       title: c.name,
       subtitle: `${c.industry} · three-party execution`,
@@ -245,7 +258,7 @@ async function ensureCatalog(entityId) {
         "Agency signature",
         "Supplier signature",
       ],
-      footer: "Contract body snapshot",
+      footer: "Shared contract template",
     });
     const uploaded = writeBytes("uploads", `${c.industry}-contract.pdf`, pdf);
     const templateId = newId();
@@ -253,14 +266,11 @@ async function ensureCatalog(entityId) {
       `INSERT INTO templates (
         id, entity_id, name, source_url, default_front_cover, default_back_cover,
         is_active, created_at, industry, description
-      ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`
+      ) VALUES (?, NULL, ?, ?, NULL, NULL, 1, ?, ?, ?)`
     ).run(
       templateId,
-      entityId,
       c.name,
       `local://${uploaded.storageRef}`,
-      front?.id || null,
-      back?.id || null,
       now(),
       c.industry,
       c.description
@@ -268,7 +278,6 @@ async function ensureCatalog(entityId) {
     addRolesAndFields(templateId, true);
   }
 
-  // Upgrade legacy MSA if present
   db.prepare(
     `UPDATE templates SET industry = COALESCE(industry, 'technology'),
       description = COALESCE(description, 'General services agreement')
@@ -311,10 +320,9 @@ async function ensureCatalog(entityId) {
     db.prepare(
       `INSERT INTO appendices (
         id, entity_id, industry, name, description, storage_ref, is_active, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 1, ?)`
+      ) VALUES (?, NULL, ?, ?, ?, ?, 1, ?)`
     ).run(
       newId(),
-      entityId,
       a.industry,
       a.name,
       `Industry appendix for ${a.industry}`,
@@ -324,60 +332,154 @@ async function ensureCatalog(entityId) {
   }
 }
 
-export async function ensureSeed() {
-  migrate();
-  const existing = db.prepare("SELECT id FROM entities LIMIT 1").get();
-  if (existing) {
-    await ensureCatalog(existing.id);
-    return { seeded: false, upgraded: true, entityId: existing.id };
-  }
-
-  const userId = newId();
-  db.prepare(
-    `INSERT INTO users (id, email, name, role, is_active, created_at)
-     VALUES (?, ?, ?, 'admin', 1, ?)`
-  ).run(userId, "ops@attest.local", "Attest Operator", now());
-
-  const entityId = newId();
-  db.prepare(
-    `INSERT INTO entities (
-      id, slug, legal_name, company_number, vat_number, registered_office,
-      display_name, brand_json, sending_domain, from_address, reply_to,
-      email_signature_html, email_signature_text, domain_verified, is_active, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?)`
-  ).run(
-    entityId,
-    "acme",
-    "Acme Contracting Limited",
-    "12345678",
-    "GB123456789",
-    "1 Example Street, London, EC1A 1BB",
-    "Acme",
-    JSON.stringify({
+const COMPANY_DEFS = [
+  {
+    slug: "acme",
+    legal_name: "Acme Contracting Limited",
+    company_number: "12345678",
+    vat_number: "GB123456789",
+    registered_office: "1 Example Street, London, EC1A 1BB",
+    display_name: "Acme",
+    sending_domain: "acme.local",
+    from_address: "documents@acme.local",
+    brand: {
       primary: "#0d7370",
       secondary: "#10242b",
-      logo_asset_id: null,
-      font: "Outfit",
-    }),
-    "acme.local",
-    "documents@acme.local",
-    "ops@acme.local",
-    "<p>Kind regards,<br/>Acme Contracting</p>",
-    "Kind regards,\nAcme Contracting",
-    now()
-  );
+      frontColor: [0.05, 0.45, 0.44],
+      backColor: [0.06, 0.14, 0.17],
+    },
+  },
+  {
+    slug: "northwind",
+    legal_name: "Northwind Facilities Ltd",
+    company_number: "23456789",
+    vat_number: "GB234567890",
+    registered_office: "22 Harbour Road, Bristol, BS1 4ST",
+    display_name: "Northwind",
+    sending_domain: "northwind.local",
+    from_address: "contracts@northwind.local",
+    brand: {
+      primary: "#1f4e79",
+      secondary: "#0b1f33",
+      frontColor: [0.12, 0.3, 0.47],
+      backColor: [0.04, 0.12, 0.2],
+    },
+  },
+  {
+    slug: "contoso",
+    legal_name: "Contoso Health Group PLC",
+    company_number: "34567890",
+    vat_number: "GB345678901",
+    registered_office: "8 Clinic Way, Manchester, M1 2AB",
+    display_name: "Contoso Health",
+    sending_domain: "contoso.local",
+    from_address: "esign@contoso.local",
+    brand: {
+      primary: "#7a1f3d",
+      secondary: "#2a0f18",
+      frontColor: [0.48, 0.12, 0.24],
+      backColor: [0.16, 0.06, 0.09],
+    },
+  },
+  {
+    slug: "fabrikam",
+    legal_name: "Fabrikam Technology Limited",
+    company_number: "45678901",
+    vat_number: "GB456789012",
+    registered_office: "100 Silicon Quay, Cambridge, CB2 1AA",
+    display_name: "Fabrikam",
+    sending_domain: "fabrikam.local",
+    from_address: "legal@fabrikam.local",
+    brand: {
+      primary: "#5b4b8a",
+      secondary: "#1d1830",
+      frontColor: [0.36, 0.29, 0.54],
+      backColor: [0.11, 0.09, 0.19],
+    },
+  },
+  {
+    slug: "adventureworks",
+    legal_name: "Adventure Works Construction Ltd",
+    company_number: "56789012",
+    vat_number: "GB567890123",
+    registered_office: "14 Yard Lane, Leeds, LS1 4DY",
+    display_name: "Adventure Works",
+    sending_domain: "adventureworks.local",
+    from_address: "docs@adventureworks.local",
+    brand: {
+      primary: "#8a5a12",
+      secondary: "#2b1d08",
+      frontColor: [0.54, 0.35, 0.07],
+      backColor: [0.17, 0.11, 0.03],
+    },
+  },
+];
 
-  db.prepare(
-    "INSERT INTO user_entity_access (user_id, entity_id) VALUES (?, ?)"
-  ).run(userId, entityId);
-  seedDefaultEmailTemplates(entityId, userId);
-  await ensureCatalog(entityId);
+async function ensureCompanies(userId) {
+  for (const def of COMPANY_DEFS) {
+    let entity = db.prepare("SELECT * FROM entities WHERE slug = ?").get(def.slug);
+    if (!entity) {
+      const entityId = newId();
+      db.prepare(
+        `INSERT INTO entities (
+          id, slug, legal_name, company_number, vat_number, registered_office,
+          display_name, brand_json, sending_domain, from_address, reply_to,
+          email_signature_html, email_signature_text, domain_verified, is_active, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?)`
+      ).run(
+        entityId,
+        def.slug,
+        def.legal_name,
+        def.company_number,
+        def.vat_number,
+        def.registered_office,
+        def.display_name,
+        JSON.stringify({
+          primary: def.brand.primary,
+          secondary: def.brand.secondary,
+          logo_asset_id: null,
+          font: "Outfit",
+        }),
+        def.sending_domain,
+        def.from_address,
+        `ops@${def.sending_domain}`,
+        `<p>Kind regards,<br/>${def.display_name}</p>`,
+        `Kind regards,\n${def.display_name}`,
+        now()
+      );
+      if (userId) {
+        db.prepare(
+          "INSERT OR IGNORE INTO user_entity_access (user_id, entity_id) VALUES (?, ?)"
+        ).run(userId, entityId);
+      }
+      seedDefaultEmailTemplates(entityId, userId);
+      entity = db.prepare("SELECT * FROM entities WHERE id = ?").get(entityId);
+    }
+    await ensureEntityBrand(entity.id, {
+      label: def.display_name,
+      primary: def.brand.primary,
+      secondary: def.brand.secondary,
+      frontColor: def.brand.frontColor,
+      backColor: def.brand.backColor,
+    });
+  }
+}
 
-  appendEvent({
-    actor: "system",
-    eventType: "webhook_delivered",
-    metadata: { note: "seed_complete", entity_id: entityId },
-  });
+export async function ensureSeed() {
+  migrate();
+  let user = db.prepare("SELECT id FROM users WHERE role = 'admin' LIMIT 1").get();
+  if (!user) {
+    const userId = newId();
+    db.prepare(
+      `INSERT INTO users (id, email, name, role, is_active, created_at)
+       VALUES (?, ?, ?, 'admin', 1, ?)`
+    ).run(userId, "ops@attest.local", "Attest Operator", now());
+    user = { id: userId };
+  }
 
-  return { seeded: true, entityId, userId };
+  await ensureCompanies(user.id);
+  await ensureSharedCatalog();
+
+  const count = db.prepare("SELECT COUNT(*) AS c FROM entities").get().c;
+  return { seeded: true, companies: count, userId: user.id };
 }

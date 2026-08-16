@@ -17,8 +17,8 @@ import {
   startSigningInvites,
 } from "./signing.js";
 import { ensureSeed } from "./seed.js";
-import { absolutePath, readBytes, writeBytes } from "./storage.js";
-import { listOutboundEmails } from "./mail.js";
+import { seedDefaultEmailTemplates, listOutboundEmails } from "./mail.js";
+import { readBytes, writeBytes } from "./storage.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8787);
@@ -193,8 +193,189 @@ app.get("/api/brand-pack", (req, res) => {
 
 app.get("/api/entities", (_req, res) => {
   res.json(
-    db.prepare("SELECT * FROM entities ORDER BY display_name").all().map(serializeEntity)
+    db
+      .prepare("SELECT * FROM entities WHERE is_active = 1 ORDER BY display_name")
+      .all()
+      .map(serializeEntity)
   );
+});
+
+app.get("/api/entities/:id", (req, res) => {
+  const entity = serializeEntity(
+    db.prepare("SELECT * FROM entities WHERE id = ?").get(req.params.id)
+  );
+  if (!entity) return res.status(404).json({ error: "Not found" });
+  const assets = db
+    .prepare(
+      "SELECT * FROM entity_assets WHERE entity_id = ? ORDER BY kind, created_at DESC"
+    )
+    .all(entity.id);
+  const pack = resolveBrandPack(entity.id, { industry: null });
+  res.json({
+    ...entity,
+    assets,
+    active_pack: {
+      front: pack.front,
+      back: pack.back,
+      logo: pack.logo,
+    },
+  });
+});
+
+app.post("/api/entities", (req, res) => {
+  try {
+    const body = req.body || {};
+    const required = [
+      "slug",
+      "legal_name",
+      "company_number",
+      "registered_office",
+      "display_name",
+      "sending_domain",
+      "from_address",
+    ];
+    for (const key of required) {
+      if (!body[key]) return res.status(400).json({ error: `${key} required` });
+    }
+    if (db.prepare("SELECT id FROM entities WHERE slug = ?").get(body.slug)) {
+      return res.status(400).json({ error: "slug already exists" });
+    }
+    const id = newId();
+    db.prepare(
+      `INSERT INTO entities (
+        id, slug, legal_name, company_number, vat_number, registered_office,
+        display_name, brand_json, sending_domain, from_address, reply_to,
+        email_signature_html, email_signature_text, domain_verified, is_active, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`
+    ).run(
+      id,
+      body.slug,
+      body.legal_name,
+      body.company_number,
+      body.vat_number || null,
+      body.registered_office,
+      body.display_name,
+      JSON.stringify(
+        body.brand || {
+          primary: "#0d7370",
+          secondary: "#10242b",
+          logo_asset_id: null,
+          font: "Outfit",
+        }
+      ),
+      body.sending_domain,
+      body.from_address,
+      body.reply_to || null,
+      body.email_signature_html || `<p>Kind regards,<br/>${body.display_name}</p>`,
+      body.email_signature_text || `Kind regards,\n${body.display_name}`,
+      body.domain_verified === false ? 0 : 1,
+      now()
+    );
+    const user = db.prepare("SELECT id FROM users WHERE role = 'admin' LIMIT 1").get();
+    if (user) {
+      db.prepare(
+        "INSERT OR IGNORE INTO user_entity_access (user_id, entity_id) VALUES (?, ?)"
+      ).run(user.id, id);
+      seedDefaultEmailTemplates(id, user.id);
+    }
+    res.status(201).json(
+      serializeEntity(db.prepare("SELECT * FROM entities WHERE id = ?").get(id))
+    );
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.patch("/api/entities/:id", (req, res) => {
+  const entity = db.prepare("SELECT * FROM entities WHERE id = ?").get(req.params.id);
+  if (!entity) return res.status(404).json({ error: "Not found" });
+  const body = req.body || {};
+  const brand = {
+    ...parseJson(entity.brand_json, {}),
+    ...(body.brand || {}),
+  };
+  db.prepare(
+    `UPDATE entities SET
+      legal_name = ?,
+      company_number = ?,
+      vat_number = ?,
+      registered_office = ?,
+      display_name = ?,
+      brand_json = ?,
+      sending_domain = ?,
+      from_address = ?,
+      reply_to = ?,
+      email_signature_html = ?,
+      email_signature_text = ?,
+      domain_verified = ?
+     WHERE id = ?`
+  ).run(
+    body.legal_name ?? entity.legal_name,
+    body.company_number ?? entity.company_number,
+    body.vat_number ?? entity.vat_number,
+    body.registered_office ?? entity.registered_office,
+    body.display_name ?? entity.display_name,
+    JSON.stringify(brand),
+    body.sending_domain ?? entity.sending_domain,
+    body.from_address ?? entity.from_address,
+    body.reply_to ?? entity.reply_to,
+    body.email_signature_html ?? entity.email_signature_html,
+    body.email_signature_text ?? entity.email_signature_text,
+    body.domain_verified === undefined
+      ? entity.domain_verified
+      : body.domain_verified
+        ? 1
+        : 0,
+    entity.id
+  );
+  res.json(serializeEntity(db.prepare("SELECT * FROM entities WHERE id = ?").get(entity.id)));
+});
+
+app.post("/api/entities/:id/assets", upload.single("file"), (req, res) => {
+  try {
+    const entity = db.prepare("SELECT * FROM entities WHERE id = ?").get(req.params.id);
+    if (!entity) return res.status(404).json({ error: "Not found" });
+    const kind = req.body.kind;
+    if (!["front_cover", "back_cover", "logo", "email_header"].includes(kind)) {
+      return res.status(400).json({ error: "Invalid asset kind" });
+    }
+    if (!req.file) return res.status(400).json({ error: "File required" });
+    const stored = writeBytes(
+      "assets",
+      `${entity.id}-${kind}-${Date.now()}-${req.file.originalname}`,
+      req.file.buffer
+    );
+    // deactivate previous active of same kind so new one becomes the auto-applied default
+    db.prepare(
+      "UPDATE entity_assets SET is_active = 0 WHERE entity_id = ? AND kind = ?"
+    ).run(entity.id, kind);
+    const id = newId();
+    db.prepare(
+      `INSERT INTO entity_assets (
+        id, entity_id, kind, name, storage_ref, mime, page_size, is_active, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`
+    ).run(
+      id,
+      entity.id,
+      kind,
+      req.body.name || req.file.originalname,
+      stored.storageRef,
+      req.file.mimetype,
+      req.body.page_size || "A4",
+      now()
+    );
+    if (kind === "logo") {
+      const brand = parseJson(entity.brand_json, {});
+      brand.logo_asset_id = id;
+      db.prepare("UPDATE entities SET brand_json = ? WHERE id = ?").run(
+        JSON.stringify(brand),
+        entity.id
+      );
+    }
+    res.status(201).json(db.prepare("SELECT * FROM entity_assets WHERE id = ?").get(id));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 app.get("/api/templates", (_req, res) => {

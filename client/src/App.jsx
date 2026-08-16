@@ -1,6 +1,7 @@
 import { Link, Route, Routes } from "react-router-dom";
 import Dashboard from "./pages/Dashboard.jsx";
-import Entities from "./pages/Entities.jsx";
+import Companies from "./pages/Companies.jsx";
+import CompanySetup from "./pages/CompanySetup.jsx";
 import Templates from "./pages/Templates.jsx";
 import CreateEnvelope from "./pages/CreateEnvelope.jsx";
 import EnvelopeDetail from "./pages/EnvelopeDetail.jsx";
@@ -17,7 +18,7 @@ export default function App() {
         <nav className="nav-links">
           <Link to="/">Envelopes</Link>
           <Link to="/templates">Templates</Link>
-          <Link to="/entities">Entities</Link>
+          <Link to="/companies">Companies</Link>
           <Link className="btn" to="/new">
             New envelope
           </Link>
@@ -26,7 +27,9 @@ export default function App() {
       <main className="main">
         <Routes>
           <Route path="/" element={<Dashboard />} />
-          <Route path="/entities" element={<Entities />} />
+          <Route path="/companies" element={<Companies />} />
+          <Route path="/companies/:id" element={<CompanySetup />} />
+          <Route path="/entities" element={<Companies />} />
           <Route path="/templates" element={<Templates />} />
           <Route path="/new" element={<CreateEnvelope />} />
           <Route path="/envelopes/:id" element={<EnvelopeDetail />} />

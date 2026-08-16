@@ -6,7 +6,7 @@ Specification: [`docs/esign-data-model.pdf`](docs/esign-data-model.pdf)
 
 ## What is implemented
 
-- Entities with brand tokens, verified sending domain gate, email signature blocks
+- Sending companies with legal details, brand packs (covers + logo), verified sending domain gate, email signature blocks
 - Seeded email templates (invitation / resend / reminder / turn / decline / void / completion) with merge-variable validation
 - Templates with `company` / `agency` / `supplier` roles, field ownership, and company evidence requirements
 - Envelope lifecycle: `draft → baking → ready → in_progress → completed` (+ void/decline)
@@ -37,12 +37,13 @@ npm start
 
 ## Demo path
 
-1. Open **Templates** / **Entities** to inspect the seeded Acme profile + MSA template
-2. **New envelope** → fill company/agency/supplier parties → create draft
-3. **Bake** → **Send first invitation**
-4. Use **Mint / resend link** per party (or the link returned by send) to open `/sign/:token`
-5. Company party must upload the four evidence files before signing
-6. After all three parties sign, open completed PDF + certificate
+1. Open **Companies** to review or edit sending-company setup (legal + brand pack)
+2. **New envelope** → pick sending company from the dropdown → fill agency/supplier parties → create draft
+3. On bake/send, that company’s covers + logo and industry appendices auto-apply
+4. **Bake** → **Send first invitation**
+5. Use **Mint / resend link** per party (or the link returned by send) to open `/sign/:token`
+6. Company party must upload the four evidence files before signing
+7. After all three parties sign, open completed PDF + certificate
 
 ## Local substitutions vs the brief
 

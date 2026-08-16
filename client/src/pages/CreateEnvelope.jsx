@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api.js";
 
 const blankParty = (roleKey) => ({
@@ -107,15 +107,27 @@ export default function CreateEnvelope() {
       </section>
       <form className="panel form-grid" onSubmit={onSubmit}>
         <label>
-          Sending entity
-          <select value={entityId} onChange={(e) => setEntityId(e.target.value)}>
+          Sending company
+          <select value={entityId} onChange={(e) => setEntityId(e.target.value)} required>
+            <option value="" disabled>
+              Select a company…
+            </option>
             {bootstrap.entities.map((e) => (
               <option key={e.id} value={e.id}>
-                {e.display_name} {e.domain_verified ? "" : "(unverified)"}
+                {e.display_name} — {e.legal_name}
+                {e.domain_verified ? "" : " (unverified)"}
               </option>
             ))}
           </select>
         </label>
+        <p className="muted">
+          Brand covers and logo come from that company’s setup page.{" "}
+          {entityId ? (
+            <Link to={`/companies/${entityId}`}>Open company setup</Link>
+          ) : (
+            <Link to="/companies">Manage companies</Link>
+          )}
+        </p>
 
         <label>
           Industry

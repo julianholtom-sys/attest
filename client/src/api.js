@@ -20,6 +20,26 @@ export const api = {
   health: () => request("/api/health"),
   bootstrap: () => request("/api/bootstrap"),
   listEntities: () => request("/api/entities"),
+  getEntity: (id) => request(`/api/entities/${id}`),
+  createEntity: (body) =>
+    request("/api/entities", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  updateEntity: (id, body) =>
+    request(`/api/entities/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  uploadEntityAsset: (id, kind, file, name) => {
+    const body = new FormData();
+    body.append("kind", kind);
+    if (name) body.append("name", name);
+    body.append("file", file);
+    return request(`/api/entities/${id}/assets`, { method: "POST", body });
+  },
   listTemplates: () => request("/api/templates"),
   getTemplate: (id) => request(`/api/templates/${id}`),
   listEnvelopes: () => request("/api/envelopes"),
