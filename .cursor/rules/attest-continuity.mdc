@@ -1,0 +1,14 @@
+---
+description: Attest project continuity — read status docs first
+alwaysApply: true
+---
+
+# Attest continuity
+
+At session start, read `AGENTS.md` and `docs/PROJECT_STATUS.md` before inventing product direction.
+
+Parent brand is **Union Payroll** (https://union-payroll.ltd/), accent `#0074FF`, Manrope — not Media Launch.
+
+Phone demos use `scripts/keep-tunnel-alive.sh` (localhost.run `*.lhr.life`), not Cloudflare quick tunnels.
+
+When finishing meaningful work, update `docs/PROJECT_STATUS.md`, commit, and push so other devices/agents share the same state.

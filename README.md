@@ -4,6 +4,11 @@ Local implementation of the **E-Signature Platform data model** (three-party com
 
 Specification: [`docs/esign-data-model.pdf`](docs/esign-data-model.pdf)
 
+**Continuity across devices/agents:** [`AGENTS.md`](AGENTS.md) + [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md) — update and push these when work lands so the next session (phone or desktop) starts with the same picture.
+
+Parent brand: [Union Payroll](https://union-payroll.ltd/) (`#0074FF`, Manrope).
+
+
 ## What is implemented
 
 - Sending companies with legal details, brand packs (covers + logo), verified sending domain gate, email signature blocks

@@ -1,0 +1,37 @@
+# Attest — agent handoff
+
+Read this file and `docs/PROJECT_STATUS.md` at the start of any session on this repo.
+Update both when product decisions, architecture, or demo access change, then commit and push.
+
+## Product intent
+
+- Local three-party e-sign (company / agency / supplier) for **Union Payroll** as the parent sender.
+- Spec: `docs/esign-data-model.pdf` (Postgres/GCS in the brief → SQLite + local disk here).
+- Brand source of truth: https://union-payroll.ltd/ (logo blue `#0074FF`, Manrope, white-text primary buttons).
+
+## Current product shape
+
+1. **Companies** — sending-company catalog; legal details + brand pack (front/back cover, logo).
+2. **Templates** — one **master contract** (always sent) + optional **industry appendices** (upload/add/update).
+3. **Contracts** (UI label for envelopes) — pick sending company → master always included → optionally tick appendices → parties → bake → send → sequential sign.
+
+## Stack
+
+- Monorepo: `client/` (Vite React), `server/` (Express + `node:sqlite`).
+- Data: `server/data/attest.sqlite`, files under `server/data/files/`.
+- Prod-ish local: `npm run build && npm start` (API serves built UI on **8787**).
+
+## Phone demo tunnel
+
+- Cloudflare `*.trycloudflare.com` quick tunnels proved unreliable (HTTP 530 while process still “up”).
+- Use `scripts/keep-tunnel-alive.sh` → **localhost.run** `*.lhr.life` with public health checks + auto-restart.
+- Live URL is written to `TUNNEL_URL.txt` (gitignored). Do not commit ephemeral URLs.
+- Start: ensure API on 8787, then in tmux `attest-tunnel`: `bash /workspace/scripts/keep-tunnel-alive.sh`.
+
+## Open PRs / branches (as of last status update)
+
+Prefer `docs/PROJECT_STATUS.md` for the latest branch/PR list. Work is often on feature branches under `cursor/*-59a8`.
+
+## Continuity rule for agents
+
+When ending a meaningful chunk of work: refresh `docs/PROJECT_STATUS.md` (what changed, what’s next, how to run/demo), commit, push. That is the cross-device source of truth—not chat history alone.
