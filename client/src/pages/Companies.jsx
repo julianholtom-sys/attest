@@ -19,7 +19,7 @@ export default function Companies() {
         <h1>Companies</h1>
         <p>
           Sending companies hold legal details and brand packs (covers + logo).
-          Choosing a company on a new envelope auto-applies that pack.
+          Choosing a company on a new contract auto-applies that pack.
         </p>
       </section>
       <div className="toolbar">

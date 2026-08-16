@@ -53,27 +53,55 @@ function activeAsset(entityId, kind) {
     .get(entityId, kind);
 }
 
-function appendicesForIndustry(entityId, industry) {
-  if (!industry) return [];
+export function listAppendices({ industry, entityId, ids } = {}) {
+  if (Array.isArray(ids)) {
+    if (!ids.length) return [];
+    return db
+      .prepare(
+        `SELECT * FROM appendices
+         WHERE is_active = 1 AND id IN (${ids.map(() => "?").join(",")})
+         ORDER BY industry, name`
+      )
+      .all(...ids);
+  }
+  if (industry) {
+    return db
+      .prepare(
+        `SELECT * FROM appendices
+         WHERE is_active = 1
+           AND industry = ?
+           AND (entity_id IS NULL OR entity_id = ? OR ? IS NULL)
+         ORDER BY name ASC`
+      )
+      .all(industry, entityId || null, entityId || null);
+  }
   return db
-    .prepare(
-      `SELECT * FROM appendices
-       WHERE is_active = 1
-         AND industry = ?
-         AND (entity_id IS NULL OR entity_id = ?)
-       ORDER BY name ASC`
-    )
-    .all(industry, entityId);
+    .prepare(`SELECT * FROM appendices WHERE is_active = 1 ORDER BY industry, name`)
+    .all();
 }
 
-export function resolveBrandPack(entityId, template) {
+export function resolveBrandPack(entityId, { industry = null, appendixIds = [] } = {}) {
   // Covers/logo always come from the sending company's setup (active assets).
   const front = activeAsset(entityId, "front_cover");
   const back = activeAsset(entityId, "back_cover");
   const logo = activeAsset(entityId, "logo");
-  const industry = template?.industry || null;
-  const appendices = appendicesForIndustry(entityId, industry);
-  return { front, back, logo, industry, appendices };
+  const appendices = listAppendices({ ids: appendixIds, industry, entityId });
+  return { front, back, logo, industry: industry || null, appendices };
+}
+
+export function getMasterTemplate() {
+  return (
+    db
+      .prepare(
+        `SELECT * FROM templates
+         WHERE is_master = 1 AND is_active = 1
+         ORDER BY created_at ASC LIMIT 1`
+      )
+      .get() ||
+    db
+      .prepare(`SELECT * FROM templates WHERE is_active = 1 ORDER BY created_at ASC LIMIT 1`)
+      .get()
+  );
 }
 
 export async function bakeEnvelope(envelopeId, { actor = "system" } = {}) {
@@ -120,7 +148,11 @@ export async function bakeEnvelope(envelopeId, { actor = "system" } = {}) {
       throw new Error("All role fields must have positions");
     }
 
-    const brand = resolveBrandPack(entity.id, template);
+    const appendixIds = parseJson(envelope.appendix_ids_json, []);
+    const brand = resolveBrandPack(entity.id, {
+      industry: envelope.industry || template.industry || null,
+      appendixIds,
+    });
     const sourceBytes = await loadOrCreateSourcePdf(template);
     const contentHash = sha256(sourceBytes);
 

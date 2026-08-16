@@ -16,11 +16,11 @@ export default function App() {
           <span className="brand-sub">local e-sign</span>
         </Link>
         <nav className="nav-links">
-          <Link to="/">Envelopes</Link>
-          <Link to="/templates">Templates</Link>
           <Link to="/companies">Companies</Link>
+          <Link to="/templates">Templates</Link>
+          <Link to="/">Contracts</Link>
           <Link className="btn" to="/new">
-            New envelope
+            New contract
           </Link>
         </nav>
       </header>

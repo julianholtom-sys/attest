@@ -95,7 +95,7 @@ export default function CompanySetup() {
       <section className="hero-panel">
         <h1>{isNew ? "Add company" : form.display_name || "Company setup"}</h1>
         <p>
-          Legal profile and brand pack live here. Envelope creation picks a company
+          Legal profile and brand pack live here. Contract creation picks a company
           from this list; covers and logo apply automatically.
         </p>
       </section>

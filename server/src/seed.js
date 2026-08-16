@@ -216,73 +216,74 @@ async function ensureEntityBrand(entityId, brandSpec) {
 }
 
 async function ensureSharedCatalog() {
-  const contracts = [
-    {
-      industry: "construction",
-      name: "Construction Services Agreement",
-      description: "Works, variations, and site access terms",
-    },
-    {
-      industry: "healthcare",
-      name: "Healthcare Supplier Agreement",
-      description: "Clinical supply and confidentiality schedule",
-    },
-    {
-      industry: "technology",
-      name: "Technology Master Services Agreement",
-      description: "Software services and data processing terms",
-    },
-  ];
-
-  for (const c of contracts) {
-    const exists = db.prepare("SELECT id FROM templates WHERE name = ?").get(c.name);
-    if (exists) {
+  // One master contract always sent; industry needs are optional appendices.
+  let master = db.prepare("SELECT * FROM templates WHERE is_master = 1 LIMIT 1").get();
+  if (!master) {
+    const byName = db
+      .prepare("SELECT * FROM templates WHERE name = ? LIMIT 1")
+      .get("Master Services Agreement");
+    if (byName) {
       db.prepare(
-        `UPDATE templates SET industry = COALESCE(industry, ?),
-          description = COALESCE(description, ?),
-          entity_id = NULL,
-          default_front_cover = NULL,
-          default_back_cover = NULL
+        `UPDATE templates SET is_master = 1, is_active = 1, entity_id = NULL,
+          industry = NULL, description = ?, default_front_cover = NULL, default_back_cover = NULL
          WHERE id = ?`
-      ).run(c.industry, c.description, exists.id);
-      continue;
+      ).run("Core three-party agreement included on every contract", byName.id);
+      master = db.prepare("SELECT * FROM templates WHERE id = ?").get(byName.id);
     }
+  }
+
+  if (!master) {
     const pdf = await makePdf({
-      title: c.name,
-      subtitle: `${c.industry} · three-party execution`,
+      title: "Master Services Agreement",
+      subtitle: "Always included · three-party execution",
       lines: [
-        c.description,
+        "This master contract is sent with every envelope.",
+        "Industry-specific schedules are attached as optional appendices.",
+        "",
         "Company / Agency / Supplier execution blocks appear below.",
         "",
         "Company signature",
         "Agency signature",
         "Supplier signature",
       ],
-      footer: "Shared contract template",
+      footer: "Master contract template",
     });
-    const uploaded = writeBytes("uploads", `${c.industry}-contract.pdf`, pdf);
+    const uploaded = writeBytes("uploads", "master-services-agreement.pdf", pdf);
     const templateId = newId();
     db.prepare(
       `INSERT INTO templates (
         id, entity_id, name, source_url, default_front_cover, default_back_cover,
-        is_active, created_at, industry, description
-      ) VALUES (?, NULL, ?, ?, NULL, NULL, 1, ?, ?, ?)`
+        is_active, created_at, industry, description, is_master
+      ) VALUES (?, NULL, ?, ?, NULL, NULL, 1, ?, NULL, ?, 1)`
     ).run(
       templateId,
-      c.name,
+      "Master Services Agreement",
       `local://${uploaded.storageRef}`,
       now(),
-      c.industry,
-      c.description
+      "Core three-party agreement included on every contract"
     );
     addRolesAndFields(templateId, true);
+    master = db.prepare("SELECT * FROM templates WHERE id = ?").get(templateId);
+  } else {
+    db.prepare(
+      `UPDATE templates SET is_master = 1, is_active = 1, entity_id = NULL,
+        industry = NULL, default_front_cover = NULL, default_back_cover = NULL,
+        description = COALESCE(description, ?)
+       WHERE id = ?`
+    ).run("Core three-party agreement included on every contract", master.id);
   }
 
+  // Demote legacy per-industry “contracts” — those belong as appendices, not masters.
   db.prepare(
-    `UPDATE templates SET industry = COALESCE(industry, 'technology'),
-      description = COALESCE(description, 'General services agreement')
-     WHERE industry IS NULL`
-  ).run();
+    `UPDATE templates SET is_active = 0, is_master = 0
+     WHERE id != ? AND (industry IS NOT NULL OR is_master = 0)`
+  ).run(master.id);
+  db.prepare(`UPDATE templates SET is_master = 0 WHERE id != ?`).run(master.id);
+
+  const roleCount = db
+    .prepare("SELECT COUNT(*) AS c FROM template_roles WHERE template_id = ?")
+    .get(master.id).c;
+  if (!roleCount) addRolesAndFields(master.id, true);
 
   const appendixDefs = [
     {
@@ -313,7 +314,7 @@ async function ensureSharedCatalog() {
     if (exists) continue;
     const pdf = await makePdf({
       title: a.name,
-      subtitle: `Auto-attached for ${a.industry}`,
+      subtitle: `Optional ${a.industry} appendix`,
       lines: a.lines,
     });
     const stored = writeBytes("uploads", `${a.industry}-${a.name}.pdf`, pdf);
@@ -325,7 +326,7 @@ async function ensureSharedCatalog() {
       newId(),
       a.industry,
       a.name,
-      `Industry appendix for ${a.industry}`,
+      `Optional industry appendix for ${a.industry}`,
       stored.storageRef,
       now()
     );

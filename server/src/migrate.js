@@ -14,6 +14,7 @@ function ensureColumn(table, column, sqlType) {
 export function migrate() {
   ensureColumn("templates", "industry", "TEXT");
   ensureColumn("templates", "description", "TEXT");
+  ensureColumn("templates", "is_master", "INTEGER NOT NULL DEFAULT 0");
   ensureColumn("envelopes", "prepared_on", "TEXT");
   ensureColumn("envelopes", "issued_at", "TEXT");
   ensureColumn("envelopes", "industry", "TEXT");

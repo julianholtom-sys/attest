@@ -42,6 +42,43 @@ export const api = {
   },
   listTemplates: () => request("/api/templates"),
   getTemplate: (id) => request(`/api/templates/${id}`),
+  getMasterTemplate: () => request("/api/templates/master"),
+  updateMasterTemplate: (body) =>
+    request("/api/templates/master", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  uploadMasterTemplate: (file, { name, description } = {}) => {
+    const body = new FormData();
+    if (name) body.append("name", name);
+    if (description) body.append("description", description);
+    body.append("file", file);
+    return request("/api/templates/master/file", { method: "POST", body });
+  },
+  listAppendices: (industry) =>
+    request(
+      `/api/appendices${industry ? `?industry=${encodeURIComponent(industry)}` : ""}`
+    ),
+  createAppendix: ({ name, industry, description, file }) => {
+    const body = new FormData();
+    body.append("name", name);
+    body.append("industry", industry);
+    if (description) body.append("description", description);
+    body.append("file", file);
+    return request("/api/appendices", { method: "POST", body });
+  },
+  updateAppendix: (id, body) =>
+    request(`/api/appendices/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  uploadAppendixFile: (id, file) => {
+    const body = new FormData();
+    body.append("file", file);
+    return request(`/api/appendices/${id}/file`, { method: "POST", body });
+  },
   listEnvelopes: () => request("/api/envelopes"),
   getEnvelope: (id) => request(`/api/envelopes/${id}`),
   createEnvelope: (body) =>
@@ -50,10 +87,12 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }),
-  brandPack: (entityId, templateId) =>
-    request(
-      `/api/brand-pack?entityId=${encodeURIComponent(entityId)}&templateId=${encodeURIComponent(templateId)}`
-    ),
+  brandPack: (entityId, { industry, appendixIds = [] } = {}) => {
+    const params = new URLSearchParams({ entityId });
+    if (industry) params.set("industry", industry);
+    if (appendixIds.length) params.set("appendixIds", appendixIds.join(","));
+    return request(`/api/brand-pack?${params}`);
+  },
   bakeEnvelope: (id) => request(`/api/envelopes/${id}/bake`, { method: "POST" }),
   sendEnvelope: (id) => request(`/api/envelopes/${id}/send`, { method: "POST" }),
   voidEnvelope: (id, reason) =>

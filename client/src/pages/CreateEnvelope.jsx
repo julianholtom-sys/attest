@@ -18,7 +18,7 @@ export default function CreateEnvelope() {
   const [bootstrap, setBootstrap] = useState(null);
   const [entityId, setEntityId] = useState("");
   const [industry, setIndustry] = useState("");
-  const [templateId, setTemplateId] = useState("");
+  const [appendixIds, setAppendixIds] = useState([]);
   const [title, setTitle] = useState("");
   const [preparedOn, setPreparedOn] = useState(todayISO());
   const [pack, setPack] = useState(null);
@@ -35,28 +35,31 @@ export default function CreateEnvelope() {
       setBootstrap(data);
       const entity = data.entities[0]?.id || "";
       setEntityId(entity);
-      const firstIndustry = data.industries[0] || data.templates[0]?.industry || "";
+      const firstIndustry = data.industries[0] || "";
       setIndustry(firstIndustry);
-      const firstTemplate =
-        data.templates.find((t) => t.industry === firstIndustry) || data.templates[0];
-      setTemplateId(firstTemplate?.id || "");
-      setTitle(firstTemplate?.name || "");
+      setTitle(data.masterTemplate?.name || "Master Services Agreement");
     });
   }, []);
 
-  const contracts = useMemo(() => {
-    if (!bootstrap) return [];
-    return bootstrap.templates.filter((t) => !industry || t.industry === industry);
+  const industryAppendices = useMemo(() => {
+    if (!bootstrap || !industry) return [];
+    return bootstrap.appendices.filter((a) => a.industry === industry);
   }, [bootstrap, industry]);
 
   useEffect(() => {
-    if (!entityId || !templateId) {
+    setAppendixIds((prev) =>
+      prev.filter((id) => industryAppendices.some((a) => a.id === id))
+    );
+  }, [industryAppendices]);
+
+  useEffect(() => {
+    if (!entityId) {
       setPack(null);
       return undefined;
     }
     let alive = true;
     api
-      .brandPack(entityId, templateId)
+      .brandPack(entityId, { industry, appendixIds })
       .then((data) => {
         if (alive) setPack(data);
       })
@@ -66,7 +69,13 @@ export default function CreateEnvelope() {
     return () => {
       alive = false;
     };
-  }, [entityId, templateId]);
+  }, [entityId, industry, appendixIds]);
+
+  function toggleAppendix(id) {
+    setAppendixIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  }
 
   function updateParty(roleKey, key, value) {
     setParties((rows) =>
@@ -81,9 +90,10 @@ export default function CreateEnvelope() {
     try {
       const envelope = await api.createEnvelope({
         entityId,
-        templateId,
         title,
         preparedOn,
+        industry,
+        appendixIds,
         parties,
       });
       navigate(`/envelopes/${envelope.id}`);
@@ -96,13 +106,15 @@ export default function CreateEnvelope() {
 
   if (!bootstrap) return <p className="muted">Loading…</p>;
 
+  const master = bootstrap.masterTemplate;
+
   return (
     <div>
       <section className="hero-panel">
-        <h1>New envelope</h1>
+        <h1>New contract</h1>
         <p>
-          Pick industry and contract. Covers, logo, and industry appendices apply
-          automatically from the sending company brand pack.
+          The master contract is always included. Choose a sending company, then add
+          any industry appendices needed for this deal.
         </p>
       </section>
       <form className="panel form-grid" onSubmit={onSubmit}>
@@ -121,7 +133,7 @@ export default function CreateEnvelope() {
           </select>
         </label>
         <p className="muted">
-          Brand covers and logo come from that company’s setup page.{" "}
+          Brand covers and logo come from that company’s setup.{" "}
           {entityId ? (
             <Link to={`/companies/${entityId}`}>Open company setup</Link>
           ) : (
@@ -129,20 +141,30 @@ export default function CreateEnvelope() {
           )}
         </p>
 
+        <section className="party-card">
+          <h3>Master contract (always sent)</h3>
+          {master ? (
+            <ul className="audit-list">
+              <li>
+                <strong>{master.name}</strong>
+                <span>{master.description || "Core agreement"}</span>
+              </li>
+            </ul>
+          ) : (
+            <p className="error">
+              No master contract configured.{" "}
+              <Link to="/templates">Upload one in Templates</Link>.
+            </p>
+          )}
+        </section>
+
         <label>
-          Industry
+          Industry (for appendix choices)
           <select
             value={industry}
-            onChange={(e) => {
-              const next = e.target.value;
-              setIndustry(next);
-              const first = bootstrap.templates.find((t) => t.industry === next);
-              if (first) {
-                setTemplateId(first.id);
-                setTitle(first.name);
-              }
-            }}
+            onChange={(e) => setIndustry(e.target.value)}
           >
+            <option value="">No industry appendices</option>
             {bootstrap.industries.map((item) => (
               <option key={item} value={item}>
                 {item}
@@ -151,26 +173,36 @@ export default function CreateEnvelope() {
           </select>
         </label>
 
-        <label>
-          Contract
-          <select
-            value={templateId}
-            onChange={(e) => {
-              setTemplateId(e.target.value);
-              const t = bootstrap.templates.find((x) => x.id === e.target.value);
-              if (t) setTitle(t.name);
-            }}
-          >
-            {contracts.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <section className="party-card">
+          <h3>Optional industry appendices</h3>
+          {!industry ? (
+            <p className="muted">Pick an industry to see available appendices.</p>
+          ) : industryAppendices.length === 0 ? (
+            <p className="muted">
+              No appendices for {industry}.{" "}
+              <Link to="/templates">Add one in Templates</Link>.
+            </p>
+          ) : (
+            <div className="stack">
+              {industryAppendices.map((a) => (
+                <label className="consent" key={a.id}>
+                  <input
+                    type="checkbox"
+                    checked={appendixIds.includes(a.id)}
+                    onChange={() => toggleAppendix(a.id)}
+                  />
+                  <span>
+                    {a.name}
+                    {a.description ? ` — ${a.description}` : ""}
+                  </span>
+                </label>
+              ))}
+            </div>
+          )}
+        </section>
 
         <label>
-          Envelope title
+          Contract title
           <input value={title} onChange={(e) => setTitle(e.target.value)} required />
         </label>
 
@@ -185,19 +217,15 @@ export default function CreateEnvelope() {
         </label>
 
         <p className="muted">
-          Issued date is set automatically to the day the envelope is sent.
+          Issued date is set automatically to the day the contract is sent.
         </p>
 
         <section className="party-card">
-          <h3>Auto brand pack</h3>
+          <h3>Pack preview</h3>
           {!pack ? (
-            <p className="muted">Resolving covers and appendices…</p>
+            <p className="muted">Resolving covers…</p>
           ) : (
             <ul className="audit-list">
-              <li>
-                <strong>Industry</strong>
-                <span>{pack.industry || "—"}</span>
-              </li>
               <li>
                 <strong>Front cover</strong>
                 <span>{pack.front?.name || "None configured"}</span>
@@ -211,11 +239,11 @@ export default function CreateEnvelope() {
                 <span>{pack.logo?.name || "None configured"}</span>
               </li>
               <li>
-                <strong>Appendices</strong>
+                <strong>Selected appendices</strong>
                 <span>
                   {pack.appendices?.length
                     ? pack.appendices.map((a) => a.name).join(", ")
-                    : "None for this industry"}
+                    : "None selected"}
                 </span>
               </li>
             </ul>
@@ -262,8 +290,8 @@ export default function CreateEnvelope() {
         ))}
 
         {error ? <p className="error">{error}</p> : null}
-        <button className="btn" type="submit" disabled={busy || !templateId}>
-          {busy ? "Creating…" : "Create draft envelope"}
+        <button className="btn" type="submit" disabled={busy || !master}>
+          {busy ? "Creating…" : "Create draft contract"}
         </button>
       </form>
     </div>

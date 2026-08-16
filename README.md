@@ -37,9 +37,9 @@ npm start
 
 ## Demo path
 
-1. Open **Companies** to review or edit sending-company setup (legal + brand pack)
-2. **New envelope** → pick sending company from the dropdown → fill agency/supplier parties → create draft
-3. On bake/send, that company’s covers + logo and industry appendices auto-apply
+1. Open **Companies** — define sending companies and brand assets (covers/logo)
+2. Open **Templates** — upload/update the **master contract**; add industry **appendices**
+3. **New contract** → pick company → master is always included → optionally tick industry appendices → parties → create
 4. **Bake** → **Send first invitation**
 5. Use **Mint / resend link** per party (or the link returned by send) to open `/sign/:token`
 6. Company party must upload the four evidence files before signing

@@ -27,17 +27,16 @@ export default function Dashboard() {
   return (
     <div>
       <section className="hero-panel">
-        <h1>Three-party envelopes, baked and auditable.</h1>
+        <h1>Contracts</h1>
         <p>
-          Local implementation of the Attest data model: entity branding, template
-          roles, bake immutability, evidence gates, and a hash-chained event log —
-          on disk + SQLite, no GCS.
+          Each contract always includes the master agreement, company brand covers,
+          and any industry appendices you selected at create time.
         </p>
       </section>
 
       <div className="toolbar">
         <Link className="btn" to="/new">
-          Create envelope
+          Create contract
         </Link>
         <span className="muted">Storage: server/data · DB: attest.sqlite</span>
       </div>
@@ -46,7 +45,7 @@ export default function Dashboard() {
       {loading ? <p className="muted">Loading…</p> : null}
 
       {!loading && envelopes.length === 0 ? (
-        <div className="empty">No envelopes yet. Create one from the seeded MSA template.</div>
+        <div className="empty">No contracts yet. Create one from the master template.</div>
       ) : (
         <div className="envelope-list">
           {envelopes.map((env, i) => (

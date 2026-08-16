@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { db, newId, now, sha256, parseJson } from "./db.js";
 import { appendEvent, listEvents, verifyEventChain } from "./events.js";
-import { bakeEnvelope, resolveBrandPack } from "./bake.js";
+import { bakeEnvelope, resolveBrandPack, getMasterTemplate, listAppendices } from "./bake.js";
 import {
   CONSENT_TEXT,
   applySignatureAndCompleteParty,
@@ -91,15 +91,12 @@ function getEnvelopeBundle(id) {
   const template = envelope.template_id
     ? db.prepare("SELECT * FROM templates WHERE id = ?").get(envelope.template_id)
     : null;
-  const brand = resolveBrandPack(envelope.entity_id, template || { industry: envelope.industry });
+  const brand = resolveBrandPack(envelope.entity_id, {
+    industry: envelope.industry,
+    appendixIds: parseJson(envelope.appendix_ids_json, []),
+  });
   const appendixIds = parseJson(envelope.appendix_ids_json, []);
-  const appendices = appendixIds.length
-    ? db
-        .prepare(
-          `SELECT * FROM appendices WHERE id IN (${appendixIds.map(() => "?").join(",")})`
-        )
-        .all(...appendixIds)
-    : brand.appendices;
+  const appendices = listAppendices({ ids: appendixIds });
   const front = envelope.front_cover_id
     ? db.prepare("SELECT * FROM entity_assets WHERE id = ?").get(envelope.front_cover_id)
     : brand.front;
@@ -140,19 +137,28 @@ app.get("/api/health", (_req, res) => {
 
 app.get("/api/bootstrap", (req, res) => {
   const entities = db.prepare("SELECT * FROM entities ORDER BY display_name").all().map(serializeEntity);
+  const masterTemplate = getMasterTemplate();
   const templates = db
-    .prepare("SELECT * FROM templates WHERE is_active = 1 ORDER BY industry, name")
+    .prepare("SELECT * FROM templates WHERE is_active = 1 ORDER BY is_master DESC, name")
     .all();
   const users = db.prepare("SELECT id, email, name, role FROM users WHERE is_active = 1").all();
-  const appendices = db
-    .prepare("SELECT id, entity_id, industry, name, description, is_active FROM appendices WHERE is_active = 1 ORDER BY industry, name")
-    .all();
+  const appendices = listAppendices().map((a) => ({
+    id: a.id,
+    entity_id: a.entity_id,
+    industry: a.industry,
+    name: a.name,
+    description: a.description,
+    is_active: a.is_active,
+  }));
   const assets = db
     .prepare("SELECT id, entity_id, kind, name, mime, page_size, is_active FROM entity_assets WHERE is_active = 1 ORDER BY kind, name")
     .all();
-  const industries = [...new Set(templates.map((t) => t.industry).filter(Boolean))];
+  const industries = [
+    ...new Set(appendices.map((a) => a.industry).filter(Boolean)),
+  ].sort();
   res.json({
     entities,
+    masterTemplate,
     templates,
     users,
     appendices,
@@ -164,13 +170,19 @@ app.get("/api/bootstrap", (req, res) => {
 
 app.get("/api/brand-pack", (req, res) => {
   const entityId = req.query.entityId;
-  const templateId = req.query.templateId;
-  if (!entityId || !templateId) {
-    return res.status(400).json({ error: "entityId and templateId required" });
+  const industry = req.query.industry || null;
+  const appendixIds = String(req.query.appendixIds || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (!entityId) {
+    return res.status(400).json({ error: "entityId required" });
   }
-  const template = db.prepare("SELECT * FROM templates WHERE id = ?").get(templateId);
-  if (!template) return res.status(404).json({ error: "Template not found" });
-  const pack = resolveBrandPack(entityId, template);
+  const pack = resolveBrandPack(entityId, {
+    industry,
+    appendixIds: appendixIds.length ? appendixIds : [],
+  });
+  const available = industry ? listAppendices({ industry, entityId }) : [];
   res.json({
     industry: pack.industry,
     front: pack.front
@@ -183,6 +195,12 @@ app.get("/api/brand-pack", (req, res) => {
       ? { id: pack.logo.id, name: pack.logo.name, kind: pack.logo.kind }
       : null,
     appendices: pack.appendices.map((a) => ({
+      id: a.id,
+      name: a.name,
+      industry: a.industry,
+      description: a.description,
+    })),
+    availableAppendices: available.map((a) => ({
       id: a.id,
       name: a.name,
       industry: a.industry,
@@ -379,16 +397,109 @@ app.post("/api/entities/:id/assets", upload.single("file"), (req, res) => {
 });
 
 app.get("/api/templates", (_req, res) => {
-  const templates = db.prepare("SELECT * FROM templates ORDER BY created_at DESC").all();
+  const templates = db
+    .prepare("SELECT * FROM templates ORDER BY is_master DESC, created_at DESC")
+    .all();
   res.json(
     templates.map((t) => ({
       ...t,
+      is_master: Boolean(t.is_master),
       roles: db
         .prepare("SELECT * FROM template_roles WHERE template_id = ? ORDER BY signing_order")
         .all(t.id),
       fields: db.prepare("SELECT * FROM template_fields WHERE template_id = ?").all(t.id),
     }))
   );
+});
+
+app.get("/api/templates/master", (_req, res) => {
+  const t = getMasterTemplate();
+  if (!t) return res.status(404).json({ error: "Master contract not found" });
+  const roles = db
+    .prepare("SELECT * FROM template_roles WHERE template_id = ? ORDER BY signing_order")
+    .all(t.id);
+  const fields = db.prepare("SELECT * FROM template_fields WHERE template_id = ?").all(t.id);
+  res.json({ ...t, is_master: true, roles, fields });
+});
+
+app.patch("/api/templates/master", (req, res) => {
+  const t = getMasterTemplate();
+  if (!t) return res.status(404).json({ error: "Master contract not found" });
+  const body = req.body || {};
+  db.prepare(
+    `UPDATE templates SET
+      name = ?,
+      description = ?
+     WHERE id = ?`
+  ).run(body.name ?? t.name, body.description ?? t.description, t.id);
+  res.json(db.prepare("SELECT * FROM templates WHERE id = ?").get(t.id));
+});
+
+app.post("/api/templates/master/file", upload.single("file"), (req, res) => {
+  try {
+    let t = getMasterTemplate();
+    if (!req.file) return res.status(400).json({ error: "PDF file required" });
+    const stored = writeBytes(
+      "uploads",
+      `master-${Date.now()}-${req.file.originalname}`,
+      req.file.buffer
+    );
+    if (!t) {
+      const id = newId();
+      db.prepare(
+        `INSERT INTO templates (
+          id, entity_id, name, source_url, default_front_cover, default_back_cover,
+          is_active, created_at, industry, description, is_master
+        ) VALUES (?, NULL, ?, ?, NULL, NULL, 1, ?, NULL, ?, 1)`
+      ).run(
+        id,
+        req.body.name || "Master Services Agreement",
+        `local://${stored.storageRef}`,
+        now(),
+        req.body.description || "Core three-party agreement included on every contract"
+      );
+      // roles added lazily if missing — seed helper not imported; create minimal roles
+      const roleDefs = [
+        ["company", "Company", 1, 1],
+        ["agency", "Agency", 2, 0],
+        ["supplier", "Supplier", 3, 0],
+      ];
+      const roleIds = {};
+      for (const [key, label, order, evidence] of roleDefs) {
+        const rid = newId();
+        roleIds[key] = rid;
+        db.prepare(
+          `INSERT INTO template_roles (
+            id, template_id, role_key, label, signing_order, evidence_required
+          ) VALUES (?, ?, ?, ?, ?, ?)`
+        ).run(rid, id, key, label, order, evidence);
+      }
+      for (const [role, key, label, type, x, y, w, h] of [
+        ["company", "company_sig", "Company signature", "signature", 50, 190, 180, 36],
+        ["company", "company_date", "Date", "date", 250, 198, 120, 20],
+        ["agency", "agency_sig", "Agency signature", "signature", 50, 120, 180, 36],
+        ["supplier", "supplier_sig", "Supplier signature", "signature", 50, 50, 180, 36],
+      ]) {
+        db.prepare(
+          `INSERT INTO template_fields (
+            id, template_id, role_id, field_key, label, field_type, required,
+            page, x, y, w, h, validation_json
+          ) VALUES (?, ?, ?, ?, ?, ?, 1, 0, ?, ?, ?, ?, NULL)`
+        ).run(newId(), id, roleIds[role], key, label, type, x, y, w, h);
+      }
+      t = db.prepare("SELECT * FROM templates WHERE id = ?").get(id);
+    } else {
+      db.prepare("UPDATE templates SET source_url = ?, name = COALESCE(?, name) WHERE id = ?").run(
+        `local://${stored.storageRef}`,
+        req.body.name || null,
+        t.id
+      );
+      t = db.prepare("SELECT * FROM templates WHERE id = ?").get(t.id);
+    }
+    res.json(t);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 app.get("/api/templates/:id", (req, res) => {
@@ -411,7 +522,85 @@ app.get("/api/templates/:id", (req, res) => {
       "SELECT * FROM template_versions WHERE template_id = ? ORDER BY version_no DESC"
     )
     .all(t.id);
-  res.json({ ...t, roles, fields, versions });
+  res.json({ ...t, is_master: Boolean(t.is_master), roles, fields, versions });
+});
+
+app.get("/api/appendices", (req, res) => {
+  const industry = req.query.industry || null;
+  res.json(listAppendices({ industry: industry || undefined }));
+});
+
+app.post("/api/appendices", upload.single("file"), (req, res) => {
+  try {
+    const name = req.body.name;
+    const industry = req.body.industry;
+    if (!name || !industry) {
+      return res.status(400).json({ error: "name and industry required" });
+    }
+    if (!req.file) return res.status(400).json({ error: "PDF file required" });
+    const stored = writeBytes(
+      "uploads",
+      `appendix-${industry}-${Date.now()}-${req.file.originalname}`,
+      req.file.buffer
+    );
+    const id = newId();
+    db.prepare(
+      `INSERT INTO appendices (
+        id, entity_id, industry, name, description, storage_ref, is_active, created_at
+      ) VALUES (?, NULL, ?, ?, ?, ?, 1, ?)`
+    ).run(
+      id,
+      industry,
+      name,
+      req.body.description || null,
+      stored.storageRef,
+      now()
+    );
+    res.status(201).json(db.prepare("SELECT * FROM appendices WHERE id = ?").get(id));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.patch("/api/appendices/:id", (req, res) => {
+  const row = db.prepare("SELECT * FROM appendices WHERE id = ?").get(req.params.id);
+  if (!row) return res.status(404).json({ error: "Not found" });
+  const body = req.body || {};
+  db.prepare(
+    `UPDATE appendices SET
+      name = ?,
+      industry = ?,
+      description = ?,
+      is_active = ?
+     WHERE id = ?`
+  ).run(
+    body.name ?? row.name,
+    body.industry ?? row.industry,
+    body.description ?? row.description,
+    body.is_active === undefined ? row.is_active : body.is_active ? 1 : 0,
+    row.id
+  );
+  res.json(db.prepare("SELECT * FROM appendices WHERE id = ?").get(row.id));
+});
+
+app.post("/api/appendices/:id/file", upload.single("file"), (req, res) => {
+  try {
+    const row = db.prepare("SELECT * FROM appendices WHERE id = ?").get(req.params.id);
+    if (!row) return res.status(404).json({ error: "Not found" });
+    if (!req.file) return res.status(400).json({ error: "PDF file required" });
+    const stored = writeBytes(
+      "uploads",
+      `appendix-${row.industry}-${Date.now()}-${req.file.originalname}`,
+      req.file.buffer
+    );
+    db.prepare("UPDATE appendices SET storage_ref = ? WHERE id = ?").run(
+      stored.storageRef,
+      row.id
+    );
+    res.json(db.prepare("SELECT * FROM appendices WHERE id = ?").get(row.id));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 app.get("/api/envelopes", (_req, res) => {
@@ -438,9 +627,10 @@ app.post("/api/envelopes", (req, res) => {
   try {
     const {
       entityId,
-      templateId,
       title,
       preparedOn,
+      industry,
+      appendixIds = [],
       externalClientRef,
       parties,
       reminderFrequency = "none",
@@ -450,22 +640,39 @@ app.post("/api/envelopes", (req, res) => {
     if (!entity.domain_verified) {
       return res.status(400).json({ error: "Entity domain_verified = false; cannot create envelope" });
     }
-    const template = db.prepare("SELECT * FROM templates WHERE id = ?").get(templateId);
-    if (!template) return res.status(400).json({ error: "Unknown template" });
+    const template = getMasterTemplate();
+    if (!template) return res.status(400).json({ error: "Master contract is not configured" });
     if (!preparedOn || !/^\d{4}-\d{2}-\d{2}$/.test(preparedOn)) {
       return res.status(400).json({ error: "preparedOn (YYYY-MM-DD) is required" });
     }
+    const selectedIndustry = industry || null;
+    const requestedAppendixIds = Array.isArray(appendixIds) ? appendixIds : [];
+    const available = selectedIndustry
+      ? listAppendices({ industry: selectedIndustry, entityId })
+      : [];
+    const availableIds = new Set(available.map((a) => a.id));
+    for (const id of requestedAppendixIds) {
+      if (!availableIds.has(id)) {
+        return res.status(400).json({
+          error: `Appendix ${id} is not available for industry ${selectedIndustry || "(none)"}`,
+        });
+      }
+    }
+    const selectedAppendices = listAppendices({ ids: requestedAppendixIds });
+    const brand = resolveBrandPack(entityId, {
+      industry: selectedIndustry,
+      appendixIds: requestedAppendixIds,
+    });
     const roles = db
       .prepare("SELECT * FROM template_roles WHERE template_id = ? ORDER BY signing_order")
-      .all(templateId);
+      .all(template.id);
     if (roles.length !== 3) {
-      return res.status(400).json({ error: "Template must define company/agency/supplier roles" });
+      return res.status(400).json({ error: "Master contract must define company/agency/supplier roles" });
     }
     if (!Array.isArray(parties) || parties.length !== 3) {
       return res.status(400).json({ error: "Provide exactly three parties" });
     }
 
-    const brand = resolveBrandPack(entityId, template);
     const user = db.prepare("SELECT id FROM users WHERE role = 'admin' LIMIT 1").get();
     const envelopeId = newId();
     db.prepare(
@@ -477,16 +684,16 @@ app.post("/api/envelopes", (req, res) => {
     ).run(
       envelopeId,
       entityId,
-      templateId,
+      template.id,
       reminderFrequency,
       externalClientRef || null,
       title || template.name,
       preparedOn,
-      brand.industry || template.industry || null,
+      selectedIndustry,
       brand.front?.id || null,
       brand.back?.id || null,
       brand.logo?.id || null,
-      JSON.stringify(brand.appendices.map((a) => a.id)),
+      JSON.stringify(selectedAppendices.map((a) => a.id)),
       user?.id || null,
       now()
     );
@@ -517,14 +724,14 @@ app.post("/api/envelopes", (req, res) => {
       actor: user ? `staff:${user.id}` : "staff",
       eventType: "envelope_created",
       metadata: {
-        template_id: templateId,
+        template_id: template.id,
         title: title || template.name,
         prepared_on: preparedOn,
-        industry: brand.industry,
+        industry: selectedIndustry,
         auto_front_cover_id: brand.front?.id || null,
         auto_back_cover_id: brand.back?.id || null,
         auto_logo_asset_id: brand.logo?.id || null,
-        auto_appendix_ids: brand.appendices.map((a) => a.id),
+        appendix_ids: selectedAppendices.map((a) => a.id),
       },
     });
 
