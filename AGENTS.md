@@ -31,7 +31,7 @@ Update both when product decisions, architecture, or demo access change, then co
 
 ## Open PRs / branches (as of last status update)
 
-See `docs/PROJECT_STATUS.md` for the live list. As of 2026-08-16: tip work on `cursor/medialaunch-brand-ui-59a8` (PR #6); also open #5 (master/appendices) and #4 (company dropdown). Branch name `medialaunch-*` is historical — product brand is Union Payroll.
+See `docs/PROJECT_STATUS.md`. Tip: `cursor/medialaunch-brand-ui-59a8` (PR #6) includes Union Payroll brand, localhost.run tunnel, continuity docs, and `deploy-live.sh`. Also open: #5 (master/appendices), #4 (company dropdown). Branch name `medialaunch-*` is historical.
 
 ## Continuity rule for agents
 
