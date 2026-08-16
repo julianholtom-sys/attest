@@ -12,8 +12,17 @@ export default function App() {
     <div className="app-shell">
       <header className="topbar">
         <Link to="/" className="brand" aria-label="Attest home">
-          <span className="brand-mark">Attest</span>
-          <span className="brand-sub">local e-sign</span>
+          <img
+            className="brand-logo"
+            src="/medialaunch-logo.png"
+            alt="Media Launch"
+            width={160}
+            height={24}
+          />
+          <span className="brand-copy">
+            <span className="brand-mark">attest</span>
+            <span className="brand-sub">Contracts</span>
+          </span>
         </Link>
         <nav className="nav-links">
           <Link to="/companies">Companies</Link>

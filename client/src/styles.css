@@ -1,17 +1,21 @@
 :root {
-  --ink: #10242b;
-  --ink-soft: #35545c;
-  --paper: #e7eef0;
-  --mist: #c5d9d7;
-  --sea: #0d7370;
-  --sea-deep: #085652;
-  --danger: #9b2c2c;
-  --ok: #1f6b3a;
-  --line: rgba(16, 36, 43, 0.14);
-  --shadow: 0 18px 50px rgba(16, 36, 43, 0.14);
-  --radius: 14px;
-  --font-sans: "Outfit", "Avenir Next", sans-serif;
-  --font-display: "Source Serif 4", "Iowan Old Style", serif;
+  /* Media Launch brand cues — logo blue #29abe2 */
+  --ml-blue: #29abe2;
+  --ml-blue-deep: #1a91c4;
+  --ml-blue-ink: #0d6f9a;
+  --ink: #2c2e3d;
+  --ink-soft: #7b97ab;
+  --paper: #f4f7f9;
+  --surface: #ffffff;
+  --mist: #e3eef5;
+  --accent: var(--ml-blue);
+  --accent-deep: var(--ml-blue-deep);
+  --danger: #c0392b;
+  --ok: #1f7a4d;
+  --line: rgba(44, 46, 61, 0.12);
+  --shadow: 0 14px 40px rgba(24, 24, 40, 0.1);
+  --radius: 8px;
+  --font-sans: "Lato", "Helvetica Neue", Helvetica, sans-serif;
 }
 
 * {
@@ -28,21 +32,28 @@ body {
   margin: 0;
   color: var(--ink);
   font-family: var(--font-sans);
+  font-weight: 400;
+  line-height: 1.55;
   background:
-    radial-gradient(1100px 560px at 8% -12%, #9fd0cb 0%, transparent 55%),
-    radial-gradient(900px 480px at 100% 0%, #9bb7c8 0%, transparent 52%),
-    linear-gradient(165deg, #dce8ea 0%, var(--paper) 48%, #d2dde3 100%);
+    radial-gradient(900px 420px at 0% -10%, rgba(41, 171, 226, 0.16) 0%, transparent 55%),
+    radial-gradient(800px 480px at 100% 0%, rgba(123, 151, 171, 0.18) 0%, transparent 50%),
+    linear-gradient(180deg, #eef5f9 0%, var(--paper) 42%, #e8eef2 100%);
   background-attachment: fixed;
 }
 
 a {
-  color: inherit;
+  color: var(--accent-deep);
   text-decoration: none;
+}
+
+a:hover {
+  color: var(--ml-blue-ink);
 }
 
 button,
 input,
-textarea {
+textarea,
+select {
   font: inherit;
 }
 
@@ -57,10 +68,10 @@ textarea {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 1rem 1.5rem;
+  padding: 0.85rem 1.5rem;
   border-bottom: 1px solid var(--line);
-  backdrop-filter: blur(10px);
-  background: rgba(231, 238, 240, 0.78);
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(12px);
   position: sticky;
   top: 0;
   z-index: 10;
@@ -68,21 +79,39 @@ textarea {
 
 .brand {
   display: flex;
-  align-items: baseline;
-  gap: 0.65rem;
+  align-items: center;
+  gap: 0.85rem;
+  color: inherit;
+}
+
+.brand-logo {
+  display: block;
+  height: 28px;
+  width: auto;
+  animation: rise-in 0.55s ease both;
+}
+
+.brand-copy {
+  display: grid;
+  gap: 0.05rem;
+  line-height: 1.1;
 }
 
 .brand-mark {
-  font-family: var(--font-display);
-  font-size: 1.75rem;
-  letter-spacing: -0.02em;
-  animation: rise-in 0.6s ease both;
+  font-family: var(--font-sans);
+  font-size: 1.15rem;
+  font-weight: 900;
+  letter-spacing: 0.01em;
+  color: var(--ink);
+  text-transform: lowercase;
 }
 
 .brand-sub {
   color: var(--ink-soft);
-  font-size: 0.85rem;
-  opacity: 0.8;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .main {
@@ -95,21 +124,22 @@ textarea {
   display: grid;
   gap: 0.75rem;
   margin-bottom: 2rem;
-  animation: rise-in 0.7s ease both;
+  animation: rise-in 0.65s ease both;
 }
 
 .hero-panel h1 {
   margin: 0;
-  font-family: var(--font-display);
-  font-size: clamp(2.4rem, 5vw, 3.6rem);
-  font-weight: 400;
+  font-family: var(--font-sans);
+  font-size: clamp(2rem, 4.5vw, 2.85rem);
+  font-weight: 900;
   letter-spacing: -0.02em;
-  line-height: 1.05;
+  line-height: 1.12;
+  color: var(--ink);
 }
 
 .hero-panel p {
   margin: 0;
-  max-width: 36rem;
+  max-width: 38rem;
   color: var(--ink-soft);
   font-size: 1.05rem;
 }
@@ -124,10 +154,11 @@ textarea {
 .nav-links a:not(.btn) {
   color: var(--ink-soft);
   font-size: 0.92rem;
+  font-weight: 700;
 }
 
 .nav-links a:not(.btn):hover {
-  color: var(--ink);
+  color: var(--accent-deep);
 }
 
 .toolbar {
@@ -140,9 +171,9 @@ textarea {
 
 .party-card {
   border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 0.85rem;
-  background: rgba(255, 255, 255, 0.55);
+  border-radius: var(--radius);
+  padding: 0.95rem;
+  background: var(--surface);
   display: grid;
   gap: 0.55rem;
 }
@@ -156,7 +187,7 @@ textarea {
   width: 100%;
   min-height: 70vh;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--radius);
   background: #fff;
 }
 
@@ -172,16 +203,16 @@ textarea {
 select {
   width: 100%;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 6px;
   padding: 0.7rem 0.85rem;
-  background: rgba(255, 255, 255, 0.85);
+  background: var(--surface);
   color: var(--ink);
 }
 
 .badge.ready,
 .badge.baking {
-  background: #d9e8f5;
-  color: #1d4f78;
+  background: #d7eef9;
+  color: var(--ml-blue-ink);
 }
 
 .badge.in_progress,
@@ -201,18 +232,20 @@ select {
 .btn {
   appearance: none;
   border: 1px solid transparent;
-  border-radius: 999px;
-  padding: 0.7rem 1.15rem;
-  background: var(--sea);
-  color: #f7fffe;
+  border-radius: 6px;
+  padding: 0.72rem 1.2rem;
+  background: var(--accent);
+  color: #ffffff;
+  font-weight: 700;
   cursor: pointer;
   transition: transform 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
 }
 
 .btn:hover {
-  background: var(--sea-deep);
+  background: var(--accent-deep);
   transform: translateY(-1px);
-  box-shadow: 0 10px 24px rgba(15, 110, 106, 0.25);
+  box-shadow: 0 10px 22px rgba(41, 171, 226, 0.28);
+  color: #ffffff;
 }
 
 .btn:active {
@@ -226,7 +259,9 @@ select {
 }
 
 .btn.secondary:hover {
-  background: rgba(255, 255, 255, 0.55);
+  background: rgba(41, 171, 226, 0.08);
+  color: var(--accent-deep);
+  border-color: rgba(41, 171, 226, 0.35);
   box-shadow: none;
 }
 
@@ -239,6 +274,17 @@ select {
   cursor: not-allowed;
   transform: none;
   box-shadow: none;
+}
+
+a.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+}
+
+a.btn.secondary {
+  color: var(--ink);
 }
 
 .grid {
@@ -259,20 +305,24 @@ select {
   padding: 1.1rem 1.2rem;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: rgba(255, 255, 255, 0.55);
-  transition: border-color 0.2s ease, transform 0.2s ease, background 0.2s ease;
+  background: var(--surface);
+  color: inherit;
+  transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
   animation: rise-in 0.5s ease both;
 }
 
 .envelope-row:hover {
-  border-color: rgba(15, 110, 106, 0.35);
-  background: rgba(255, 255, 255, 0.82);
+  border-color: rgba(41, 171, 226, 0.45);
+  box-shadow: var(--shadow);
   transform: translateY(-2px);
+  color: inherit;
 }
 
 .envelope-row h3 {
   margin: 0 0 0.25rem;
   font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--ink);
 }
 
 .meta {
@@ -284,13 +334,13 @@ select {
   display: inline-flex;
   align-items: center;
   padding: 0.25rem 0.65rem;
-  border-radius: 999px;
+  border-radius: 6px;
   font-size: 0.75rem;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.02em;
   text-transform: uppercase;
   background: var(--mist);
-  color: var(--sea-deep);
+  color: var(--ml-blue-ink);
 }
 
 .badge.completed {
@@ -305,20 +355,23 @@ select {
 }
 
 .badge.draft {
-  background: #e7e9eb;
-  color: #445056;
+  background: #e8ecf0;
+  color: #5a6570;
 }
 
 .panel {
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: rgba(255, 255, 255, 0.62);
+  background: var(--surface);
   padding: 1.25rem;
 }
 
-.panel h2 {
+.panel h2,
+.panel h3 {
   margin: 0 0 0.85rem;
   font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--ink);
 }
 
 .form-grid {
@@ -330,19 +383,29 @@ label {
   display: grid;
   gap: 0.35rem;
   font-size: 0.9rem;
+  font-weight: 700;
   color: var(--ink-soft);
 }
 
 input[type="text"],
 input[type="email"],
+input[type="date"],
 input[type="file"],
 textarea {
   width: 100%;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 6px;
   padding: 0.7rem 0.85rem;
-  background: rgba(255, 255, 255, 0.85);
+  background: var(--surface);
   color: var(--ink);
+  font-weight: 400;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: 2px solid rgba(41, 171, 226, 0.35);
+  border-color: var(--accent);
 }
 
 .signer-row {
@@ -381,7 +444,7 @@ textarea {
   }
 
   .hero-panel h1 {
-    font-size: clamp(1.8rem, 9vw, 2.4rem);
+    font-size: clamp(1.7rem, 8vw, 2.2rem);
   }
 
   .pdf-frame {
@@ -402,11 +465,11 @@ textarea {
   position: relative;
   overflow: auto;
   max-height: min(78vh, 900px);
-  border-radius: 12px;
+  border-radius: var(--radius);
   background:
-    linear-gradient(45deg, #cfc8ba 25%, transparent 25%) -8px 0 / 16px 16px,
-    linear-gradient(-45deg, #cfc8ba 25%, transparent 25%) -8px 0 / 16px 16px,
-    #ddd5c5;
+    linear-gradient(45deg, #cfd8df 25%, transparent 25%) -8px 0 / 16px 16px,
+    linear-gradient(-45deg, #cfd8df 25%, transparent 25%) -8px 0 / 16px 16px,
+    #e4ebf0;
   padding: 1rem;
 }
 
@@ -426,11 +489,11 @@ textarea {
 
 .field-chip {
   position: absolute;
-  border: 1.5px dashed var(--sea);
-  background: rgba(15, 110, 106, 0.12);
-  color: var(--sea-deep);
+  border: 1.5px dashed var(--accent);
+  background: rgba(41, 171, 226, 0.14);
+  color: var(--ml-blue-ink);
   font-size: 0.72rem;
-  font-weight: 600;
+  font-weight: 700;
   display: grid;
   place-items: center;
   cursor: grab;
@@ -439,7 +502,7 @@ textarea {
 
 .sig-pad-wrap {
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--radius);
   background: #fff;
   overflow: hidden;
 }
@@ -474,7 +537,7 @@ textarea {
   color: var(--ink-soft);
   border: 1px dashed var(--line);
   border-radius: var(--radius);
-  background: rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.55);
 }
 
 .error {
@@ -490,7 +553,7 @@ textarea {
 @keyframes rise-in {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;

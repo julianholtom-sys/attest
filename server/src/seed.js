@@ -51,9 +51,9 @@ async function makeLogoPng() {
   const row = Buffer.alloc(1 + w * 3);
   row[0] = 0;
   for (let x = 0; x < w; x++) {
-    row[1 + x * 3] = 13;
-    row[2 + x * 3] = 115;
-    row[3 + x * 3] = 112;
+    row[1 + x * 3] = 41;
+    row[2 + x * 3] = 171;
+    row[3 + x * 3] = 226;
   }
   const raw = Buffer.concat(Array.from({ length: h }, () => Buffer.from(row)));
   const compressed = deflateSync(raw);
@@ -335,6 +335,22 @@ async function ensureSharedCatalog() {
 
 const COMPANY_DEFS = [
   {
+    slug: "medialaunch",
+    legal_name: "Media Launch Ltd",
+    company_number: "00000000",
+    vat_number: null,
+    registered_office: "Mirfield, West Yorkshire, UK",
+    display_name: "Media Launch",
+    sending_domain: "medialaunch.co.uk",
+    from_address: "contracts@medialaunch.co.uk",
+    brand: {
+      primary: "#29abe2",
+      secondary: "#2c2e3d",
+      frontColor: [0.16, 0.67, 0.89],
+      backColor: [0.17, 0.18, 0.24],
+    },
+  },
+  {
     slug: "acme",
     legal_name: "Acme Contracting Limited",
     company_number: "12345678",
@@ -344,10 +360,10 @@ const COMPANY_DEFS = [
     sending_domain: "acme.local",
     from_address: "documents@acme.local",
     brand: {
-      primary: "#0d7370",
-      secondary: "#10242b",
-      frontColor: [0.05, 0.45, 0.44],
-      backColor: [0.06, 0.14, 0.17],
+      primary: "#29abe2",
+      secondary: "#2c2e3d",
+      frontColor: [0.16, 0.67, 0.89],
+      backColor: [0.17, 0.18, 0.24],
     },
   },
   {
@@ -439,7 +455,7 @@ async function ensureCompanies(userId) {
           primary: def.brand.primary,
           secondary: def.brand.secondary,
           logo_asset_id: null,
-          font: "Outfit",
+          font: "Lato",
         }),
         def.sending_domain,
         def.from_address,

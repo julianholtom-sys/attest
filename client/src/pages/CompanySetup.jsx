@@ -15,7 +15,7 @@ const emptyForm = {
   domain_verified: true,
   email_signature_html: "",
   email_signature_text: "",
-  brand: { primary: "#0d7370", secondary: "#10242b", font: "Outfit" },
+  brand: { primary: "#29abe2", secondary: "#2c2e3d", font: "Lato" },
 };
 
 export default function CompanySetup() {

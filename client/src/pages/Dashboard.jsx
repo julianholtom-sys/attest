@@ -29,8 +29,8 @@ export default function Dashboard() {
       <section className="hero-panel">
         <h1>Contracts</h1>
         <p>
-          Each contract always includes the master agreement, company brand covers,
-          and any industry appendices you selected at create time.
+          Sent from Media Launch. Every contract includes the master agreement,
+          your company brand covers, and any industry appendices selected at create time.
         </p>
       </section>
 
