@@ -11,3 +11,4 @@ server/data/
 coverage/
 client/test-results/
 client/playwright-report/
+TUNNEL_URL.txt
