@@ -29,9 +29,9 @@ Update both when product decisions, architecture, or demo access change, then co
 - **Persistence rule:** coding/commits must not restart the tunnel. Publishing to the live demo is explicit via `bash scripts/deploy-live.sh` (restarts API only; URL stays). One-time/recovery bring-up: `bash scripts/start-live.sh`.
 - Watchdog must **not** recycle SSH while the local API is briefly down (deploys); only restart SSH if it died or public fails while local is healthy.
 
-## Open PRs / branches (as of last status update)
+## Branch for local / PC access
 
-See `docs/PROJECT_STATUS.md`. Tip: `cursor/medialaunch-brand-ui-59a8` (PR #6) includes Union Payroll brand, localhost.run tunnel, continuity docs, and `deploy-live.sh`. Also open: #5 (master/appendices), #4 (company dropdown). Branch name `medialaunch-*` is historical.
+**Use `main`.** Company setup, master+appendices, Union Payroll brand, tunnel scripts, and continuity docs are merged there. See `docs/PROJECT_STATUS.md` for detail. Older feature PRs #4/#5/#6 tip are historical.
 
 ## Continuity rule for agents
 

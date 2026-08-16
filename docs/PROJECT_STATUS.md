@@ -1,6 +1,6 @@
 # Attest — project status
 
-Last updated: 2026-08-16 ~11:00 UTC
+Last updated: 2026-08-16 ~11:02 UTC
 
 This file is the **cross-device continuity log**. Chat history does not reliably travel between phone and desktop agents. Keep this (and `AGENTS.md`) current in git.
 
@@ -101,11 +101,9 @@ Rules of the road:
 ## Active git / PR notes
 
 - Feature branch naming: `cursor/<name>-59a8`.
-- **Current tip:** `cursor/medialaunch-brand-ui-59a8` (historical name; content = Union Payroll brand + localhost.run + continuity + deploy-live). Open PR **#6**.
-- Also open (may overlap; consolidate when merging):
-  - PR **#5** `cursor/master-contract-appendices-59a8`
-  - PR **#4** `cursor/company-setup-dropdown-59a8`
-- Prefer merging into `main` rather than leaving parallel stacks.
+- **Canonical branch for PC access: `main`.** Fast-forwarded 2026-08-16 with company setup, master+appendices, Union Payroll brand, localhost.run + `deploy-live.sh`, and continuity docs (was tip of `cursor/medialaunch-brand-ui-59a8` / PR **#6**).
+- Superseded feature branches (safe to ignore / close after merge): PR **#5**, PR **#4**, and historical `cursor/medialaunch-brand-ui-59a8`.
+- On a work PC: `git checkout main && git pull origin main`.
 
 ## Runtime snapshot (this environment)
 
@@ -119,7 +117,7 @@ Rules of the road:
 - [x] Phone tunnel “No tunnel here” → stale `*.lhr.life` after restart; use `TUNNEL_URL.txt`.
 - [x] Continuity docs + `/update-project-status` slash entry.
 - [x] Separate live deploy from tunnel lifecycle (`deploy-live.sh` / hold tunnel during local downtime).
-- [ ] Merge outstanding feature PRs to `main` (#4/#5/#6 or squash equivalent).
+- [x] Merge outstanding feature work to `main` (FF of PR #6 tip; #4/#5 superseded).
 - [ ] Optional: stable public host (named tunnel / forever-free SSH key) so URL never changes even on SSH death.
 - [ ] Default New contract sending company to **Union Payroll**.
 - [ ] Say “deploy to live” when phone demo should pick up new code (don’t assume every commit is live).
