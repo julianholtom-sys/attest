@@ -275,10 +275,10 @@ app.post("/api/entities", (req, res) => {
       body.display_name,
       JSON.stringify(
         body.brand || {
-          primary: "#29abe2",
-          secondary: "#2c2e3d",
+          primary: "#0074ff",
+          secondary: "#101828",
           logo_asset_id: null,
-          font: "Lato",
+          font: "Manrope",
         }
       ),
       body.sending_domain,

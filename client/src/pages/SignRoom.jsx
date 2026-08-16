@@ -17,7 +17,7 @@ function SignaturePad({ onChange }) {
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     ctx.lineWidth = 2.2;
     ctx.lineCap = "round";
-    ctx.strokeStyle = "#2c2e3d";
+    ctx.strokeStyle = "#101828";
   }, []);
 
   function point(e) {

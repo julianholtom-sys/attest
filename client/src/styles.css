@@ -1,21 +1,21 @@
 :root {
-  /* Media Launch brand cues — logo blue #29abe2 */
-  --ml-blue: #29abe2;
-  --ml-blue-deep: #1a91c4;
-  --ml-blue-ink: #0d6f9a;
-  --ink: #2c2e3d;
-  --ink-soft: #7b97ab;
-  --paper: #f4f7f9;
+  /* Union Payroll — logo blue #0074FF */
+  --up-blue: #0074ff;
+  --up-blue-deep: #005ed1;
+  --up-blue-ink: #0047a3;
+  --ink: #101828;
+  --ink-soft: #667085;
+  --paper: #fafbfb;
   --surface: #ffffff;
-  --mist: #e3eef5;
-  --accent: var(--ml-blue);
-  --accent-deep: var(--ml-blue-deep);
+  --mist: #e8f1ff;
+  --accent: var(--up-blue);
+  --accent-deep: var(--up-blue-deep);
   --danger: #c0392b;
   --ok: #1f7a4d;
-  --line: rgba(44, 46, 61, 0.12);
-  --shadow: 0 14px 40px rgba(24, 24, 40, 0.1);
+  --line: rgba(16, 24, 40, 0.12);
+  --shadow: 0 14px 40px rgba(16, 24, 40, 0.1);
   --radius: 8px;
-  --font-sans: "Lato", "Helvetica Neue", Helvetica, sans-serif;
+  --font-sans: "Manrope", "Helvetica Neue", Helvetica, sans-serif;
 }
 
 * {
@@ -32,12 +32,12 @@ body {
   margin: 0;
   color: var(--ink);
   font-family: var(--font-sans);
-  font-weight: 400;
+  font-weight: 500;
   line-height: 1.55;
   background:
-    radial-gradient(900px 420px at 0% -10%, rgba(41, 171, 226, 0.16) 0%, transparent 55%),
-    radial-gradient(800px 480px at 100% 0%, rgba(123, 151, 171, 0.18) 0%, transparent 50%),
-    linear-gradient(180deg, #eef5f9 0%, var(--paper) 42%, #e8eef2 100%);
+    radial-gradient(900px 420px at 0% -10%, rgba(0, 116, 255, 0.14) 0%, transparent 55%),
+    radial-gradient(800px 480px at 100% 0%, rgba(163, 175, 183, 0.2) 0%, transparent 50%),
+    linear-gradient(180deg, #f4f7fb 0%, var(--paper) 45%, #eef2f6 100%);
   background-attachment: fixed;
 }
 
@@ -47,7 +47,7 @@ a {
 }
 
 a:hover {
-  color: var(--ml-blue-ink);
+  color: var(--up-blue-ink);
 }
 
 button,
@@ -70,7 +70,7 @@ select {
   gap: 1rem;
   padding: 0.85rem 1.5rem;
   border-bottom: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.94);
   backdrop-filter: blur(12px);
   position: sticky;
   top: 0;
@@ -86,7 +86,7 @@ select {
 
 .brand-logo {
   display: block;
-  height: 28px;
+  height: 36px;
   width: auto;
   animation: rise-in 0.55s ease both;
 }
@@ -99,16 +99,15 @@ select {
 
 .brand-mark {
   font-family: var(--font-sans);
-  font-size: 1.15rem;
-  font-weight: 900;
-  letter-spacing: 0.01em;
+  font-size: 1.1rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
   color: var(--ink);
-  text-transform: lowercase;
 }
 
 .brand-sub {
   color: var(--ink-soft);
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -131,17 +130,18 @@ select {
   margin: 0;
   font-family: var(--font-sans);
   font-size: clamp(2rem, 4.5vw, 2.85rem);
-  font-weight: 900;
-  letter-spacing: -0.02em;
+  font-weight: 800;
+  letter-spacing: -0.03em;
   line-height: 1.12;
   color: var(--ink);
 }
 
 .hero-panel p {
   margin: 0;
-  max-width: 38rem;
+  max-width: 40rem;
   color: var(--ink-soft);
   font-size: 1.05rem;
+  font-weight: 500;
 }
 
 .nav-links {
@@ -211,8 +211,8 @@ select {
 
 .badge.ready,
 .badge.baking {
-  background: #d7eef9;
-  color: var(--ml-blue-ink);
+  background: #dceaff;
+  color: var(--up-blue-ink);
 }
 
 .badge.in_progress,
@@ -244,7 +244,7 @@ select {
 .btn:hover {
   background: var(--accent-deep);
   transform: translateY(-1px);
-  box-shadow: 0 10px 22px rgba(41, 171, 226, 0.28);
+  box-shadow: 0 10px 22px rgba(0, 116, 255, 0.28);
   color: #ffffff;
 }
 
@@ -259,9 +259,9 @@ select {
 }
 
 .btn.secondary:hover {
-  background: rgba(41, 171, 226, 0.08);
+  background: rgba(0, 116, 255, 0.08);
   color: var(--accent-deep);
-  border-color: rgba(41, 171, 226, 0.35);
+  border-color: rgba(0, 116, 255, 0.35);
   box-shadow: none;
 }
 
@@ -312,7 +312,7 @@ a.btn.secondary {
 }
 
 .envelope-row:hover {
-  border-color: rgba(41, 171, 226, 0.45);
+  border-color: rgba(0, 116, 255, 0.45);
   box-shadow: var(--shadow);
   transform: translateY(-2px);
   color: inherit;
@@ -340,7 +340,7 @@ a.btn.secondary {
   letter-spacing: 0.02em;
   text-transform: uppercase;
   background: var(--mist);
-  color: var(--ml-blue-ink);
+  color: var(--up-blue-ink);
 }
 
 .badge.completed {
@@ -398,13 +398,13 @@ textarea {
   padding: 0.7rem 0.85rem;
   background: var(--surface);
   color: var(--ink);
-  font-weight: 400;
+  font-weight: 500;
 }
 
 input:focus,
 select:focus,
 textarea:focus {
-  outline: 2px solid rgba(41, 171, 226, 0.35);
+  outline: 2px solid rgba(0, 116, 255, 0.3);
   border-color: var(--accent);
 }
 
@@ -490,8 +490,8 @@ textarea:focus {
 .field-chip {
   position: absolute;
   border: 1.5px dashed var(--accent);
-  background: rgba(41, 171, 226, 0.14);
-  color: var(--ml-blue-ink);
+  background: rgba(0, 116, 255, 0.12);
+  color: var(--up-blue-ink);
   font-size: 0.72rem;
   font-weight: 700;
   display: grid;

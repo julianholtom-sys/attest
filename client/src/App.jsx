@@ -14,14 +14,14 @@ export default function App() {
         <Link to="/" className="brand" aria-label="Attest home">
           <img
             className="brand-logo"
-            src="/medialaunch-logo.png"
-            alt="Media Launch"
-            width={160}
-            height={24}
+            src="/union-payroll-logo.png"
+            alt="Union Payroll"
+            width={36}
+            height={36}
           />
           <span className="brand-copy">
-            <span className="brand-mark">attest</span>
-            <span className="brand-sub">Contracts</span>
+            <span className="brand-mark">Union Payroll</span>
+            <span className="brand-sub">Attest contracts</span>
           </span>
         </Link>
         <nav className="nav-links">
