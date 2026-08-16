@@ -50,6 +50,16 @@ npm start
 6. Company party must upload the four evidence files before signing
 7. After all three parties sign, open completed PDF + certificate
 
+## Phone demo tunnel
+
+```bash
+npm run build && npm start   # serves UI+API on :8787
+bash scripts/keep-tunnel-alive.sh
+cat TUNNEL_URL.txt           # current public https://….lhr.life URL
+```
+
+Uses localhost.run (not Cloudflare quick tunnels). The watchdog health-checks the public URL and restarts if it fails.
+
 ## Local substitutions vs the brief
 
 | Brief | Local Attest |
