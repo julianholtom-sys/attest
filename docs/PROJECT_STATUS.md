@@ -1,6 +1,6 @@
 # Attest — project status
 
-Last updated: 2026-08-16 (UTC)
+Last updated: 2026-08-16 ~09:30 UTC
 
 This file is the **cross-device continuity log**. Chat history does not reliably travel between phone and desktop agents. Keep this (and `AGENTS.md`) current in git.
 
@@ -47,6 +47,7 @@ Parent brand / sending company context: **Union Payroll** — https://union-payr
 - Font: **Manrope**.
 - Header: Union Payroll mark + “Attest contracts”.
 - Assets: `client/public/union-payroll-logo.png`.
+- Do **not** restyle toward Media Launch; that was a mistaken brand pass before the Union Payroll URL was provided.
 
 ## How to run
 
@@ -63,10 +64,20 @@ Dev split: `npm run dev` (API 8787, Vite 5173).
 ```bash
 # API must be up on 8787 first
 bash scripts/keep-tunnel-alive.sh
-# Live URL → TUNNEL_URL.txt
+# Live URL → TUNNEL_URL.txt (gitignored)
 ```
 
-Do **not** rely on Cloudflare quick tunnels for demos; they were returning 530 while still appearing connected.
+- Prefer **localhost.run** `*.lhr.life` via the watchdog script.
+- Do **not** rely on Cloudflare `*.trycloudflare.com` quick tunnels (530 / silent death).
+- “No tunnel here” almost always means a **stale hostname** after SSH restarted — use the new URL from `TUNNEL_URL.txt`; old links do not recover.
+- Ephemeral URLs change on restart; for a fixed host later, use a named Cloudflare tunnel or localhost.run forever-free + SSH key.
+
+## Continuity tooling
+
+- `AGENTS.md` — short agent briefing (read at session start).
+- `docs/PROJECT_STATUS.md` — this log.
+- `.cursor/rules/attest-continuity.mdc` — always-apply reminder.
+- **`/update-project-status`** — Agent slash command + skill (`.cursor/commands/` + `.cursor/skills/update-project-status/`) to refresh these docs and push.
 
 ## Recent work stream (high level)
 
@@ -76,19 +87,25 @@ Do **not** rely on Cloudflare quick tunnels for demos; they were returning 530 w
 4. Restructure to master contract + selectable industry appendices; upload/update UI.
 5. Restyle to Union Payroll brand (after correcting mistaken Media Launch pass).
 6. Phone tunnel: Cloudflare → localhost.run watchdog with public health checks.
+7. Cross-device continuity docs + Cursor rule.
+8. Persistent `/update-project-status` slash command/skill.
 
 ## Active git / PR notes
 
 - Feature branch naming: `cursor/<name>-59a8`.
-- Recent brand + tunnel work has been on `cursor/medialaunch-brand-ui-59a8` (name is historical; content is Union Payroll + localhost.run).
-- Related earlier PRs also covered company dropdown and master/appendices flows — check GitHub for merge state before branching from `main`.
+- **Current tip of brand/tunnel/continuity work:** `cursor/medialaunch-brand-ui-59a8` (branch name is historical; content is Union Payroll + localhost.run + continuity). Open PR **#6**.
+- Still open (may overlap / need rebase or close after #6 lands):
+  - PR **#5** `cursor/master-contract-appendices-59a8` — master + appendices
+  - PR **#4** `cursor/company-setup-dropdown-59a8` — company setup dropdown
+- Check merge state on GitHub before branching from `main`; prefer consolidating into `main` rather than leaving parallel stacks.
 
 ## Known issues / next
 
-- [x] Phone tunnel “No tunnel here”: usually an **stale `*.lhr.life` hostname** after SSH restarted. Restart `scripts/keep-tunnel-alive.sh` and use the new URL from `TUNNEL_URL.txt` (old links do not recover).
-- [ ] Merge outstanding feature PRs to `main` if not already merged.
-- [ ] Optional: named/stable public host (Cloudflare named tunnel or localhost.run forever-free with SSH key) if ephemeral `*.lhr.life` URLs remain too brittle for demos.
-- [ ] Prefer Union Payroll as default selected sending company on New contract.
+- [x] Phone tunnel “No tunnel here” → stale `*.lhr.life` after restart; use `TUNNEL_URL.txt`.
+- [x] Continuity docs + `/update-project-status` slash entry.
+- [ ] Merge outstanding feature PRs to `main` (likely #4/#5/#6 or squash equivalent).
+- [ ] Optional: stable public host (named tunnel / forever-free SSH key).
+- [ ] Default New contract sending company to **Union Payroll**.
 
 ## Continuity for humans (any device)
 
@@ -96,8 +113,8 @@ You do **not** need a special “quit” command.
 
 What actually persists across devices:
 
-1. **This repo on GitHub** — `AGENTS.md` + `docs/PROJECT_STATUS.md` (ask the agent to update + push at the end of a session).
-2. **Cursor User Rules** (account settings) — stable preferences; not a substitute for project status.
-3. **Chat history** — local to that conversation/device path; do not treat as the source of truth.
+1. **This repo on GitHub** — `AGENTS.md` + `docs/PROJECT_STATUS.md`.
+2. **Cursor User Rules** — stable preferences only.
+3. **Chat history** — not the source of truth across devices.
 
-Practical habit: before leaving a session, run **`/update-project-status`** in Agent chat (or say “update project status and push”). Opening the same repo elsewhere is then enough for the next agent to catch up.
+Before leaving a session: run **`/update-project-status`** (or say “update project status and push”).
