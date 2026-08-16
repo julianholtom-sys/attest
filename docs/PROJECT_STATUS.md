@@ -1,6 +1,6 @@
 # Attest — project status
 
-Last updated: 2026-08-16 ~09:30 UTC
+Last updated: 2026-08-16 ~11:00 UTC
 
 This file is the **cross-device continuity log**. Chat history does not reliably travel between phone and desktop agents. Keep this (and `AGENTS.md`) current in git.
 
@@ -59,28 +59,32 @@ npm start          # http://localhost:8787
 
 Dev split: `npm run dev` (API 8787, Vite 5173).
 
-### Phone / public demo
+### Phone / public demo (persistent workflow)
 
 ```bash
 # One-time / recovery (starts API + tunnel)
 bash scripts/start-live.sh
-cat TUNNEL_URL.txt
+cat TUNNEL_URL.txt           # gitignored; do not commit
 
 # Publish code changes WITHOUT changing the public URL
 bash scripts/deploy-live.sh
 ```
 
-- Prefer **localhost.run** `*.lhr.life` via the watchdog script.
-- Do **not** rely on Cloudflare `*.trycloudflare.com` quick tunnels.
-- “No tunnel here” = **stale hostname** after SSH restarted — avoid restarting the tunnel during normal work.
-- Agents must not kill the tunnel when editing/building; only `deploy-live.sh` updates what the existing URL serves.
+Rules of the road:
+
+- Prefer **localhost.run** `*.lhr.life` via `scripts/keep-tunnel-alive.sh`.
+- Do **not** use Cloudflare `*.trycloudflare.com` quick tunnels.
+- **Do not** kill/restart the tunnel during normal coding or status commits.
+- Watchdog holds SSH open while local API is down (deploys); only recycles SSH if the process dies or public fails while local is healthy.
+- “No tunnel here” = stale hostname after an SSH recycle — read a fresh URL from `TUNNEL_URL.txt`.
+- Anonymous `*.lhr.life` hostnames still change if SSH itself dies; for a forever-stable host, add a named Cloudflare tunnel or localhost.run forever-free + SSH key later.
 
 ## Continuity tooling
 
 - `AGENTS.md` — short agent briefing (read at session start).
 - `docs/PROJECT_STATUS.md` — this log.
-- `.cursor/rules/attest-continuity.mdc` — always-apply reminder.
-- **`/update-project-status`** — Agent slash command + skill (`.cursor/commands/` + `.cursor/skills/update-project-status/`) to refresh these docs and push.
+- `.cursor/rules/attest-continuity.mdc` — always-apply: Union Payroll brand + protect live tunnel + deploy-live only.
+- **`/update-project-status`** — Agent slash command + skill to refresh these docs and push.
 
 ## Recent work stream (high level)
 
@@ -89,34 +93,42 @@ bash scripts/deploy-live.sh
 3. Company setup catalog + sending-company dropdown on create.
 4. Restructure to master contract + selectable industry appendices; upload/update UI.
 5. Restyle to Union Payroll brand (after correcting mistaken Media Launch pass).
-6. Phone tunnel: Cloudflare → localhost.run watchdog with public health checks.
+6. Phone tunnel: Cloudflare → localhost.run watchdog.
 7. Cross-device continuity docs + Cursor rule.
 8. Persistent `/update-project-status` slash command/skill.
-9. **Live demo persistence:** `deploy-live.sh` publishes code without recycling the tunnel URL; watchdog ignores local downtime during deploys.
+9. Live demo persistence: `deploy-live.sh` / `start-live.sh`; watchdog ignores local downtime so URL does not change on every edit.
 
 ## Active git / PR notes
 
 - Feature branch naming: `cursor/<name>-59a8`.
-- **Current tip of brand/tunnel/continuity work:** `cursor/medialaunch-brand-ui-59a8` (branch name is historical; content is Union Payroll + localhost.run + continuity). Open PR **#6**.
-- Still open (may overlap / need rebase or close after #6 lands):
-  - PR **#5** `cursor/master-contract-appendices-59a8` — master + appendices
-  - PR **#4** `cursor/company-setup-dropdown-59a8` — company setup dropdown
-- Check merge state on GitHub before branching from `main`; prefer consolidating into `main` rather than leaving parallel stacks.
+- **Current tip:** `cursor/medialaunch-brand-ui-59a8` (historical name; content = Union Payroll brand + localhost.run + continuity + deploy-live). Open PR **#6**.
+- Also open (may overlap; consolidate when merging):
+  - PR **#5** `cursor/master-contract-appendices-59a8`
+  - PR **#4** `cursor/company-setup-dropdown-59a8`
+- Prefer merging into `main` rather than leaving parallel stacks.
+
+## Runtime snapshot (this environment)
+
+- Snapshot at **2026-08-16T10:59:53Z**: local `/api/health` OK; public `*.lhr.life` health **200**.
+- API on `:8787` via tmux `attest-server` (`npm start`).
+- Tunnel watchdog via tmux `attest-tunnel` (`scripts/keep-tunnel-alive.sh`).
+- Public URL lives only in `TUNNEL_URL.txt` (ephemeral; check that file, don’t trust old chat links). Current host at snapshot time: `https://c84b5072969a1a.lhr.life` (may change if SSH dies).
 
 ## Known issues / next
 
 - [x] Phone tunnel “No tunnel here” → stale `*.lhr.life` after restart; use `TUNNEL_URL.txt`.
 - [x] Continuity docs + `/update-project-status` slash entry.
 - [x] Separate live deploy from tunnel lifecycle (`deploy-live.sh` / hold tunnel during local downtime).
-- [ ] Merge outstanding feature PRs to `main` (likely #4/#5/#6 or squash equivalent).
+- [ ] Merge outstanding feature PRs to `main` (#4/#5/#6 or squash equivalent).
 - [ ] Optional: stable public host (named tunnel / forever-free SSH key) so URL never changes even on SSH death.
 - [ ] Default New contract sending company to **Union Payroll**.
+- [ ] Say “deploy to live” when phone demo should pick up new code (don’t assume every commit is live).
 
 ## Continuity for humans (any device)
 
 You do **not** need a special “quit” command.
 
-What actually persists across devices:
+What persists across devices:
 
 1. **This repo on GitHub** — `AGENTS.md` + `docs/PROJECT_STATUS.md`.
 2. **Cursor User Rules** — stable preferences only.
