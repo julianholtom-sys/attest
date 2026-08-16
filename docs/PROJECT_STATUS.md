@@ -100,4 +100,4 @@ What actually persists across devices:
 2. **Cursor User Rules** (account settings) — stable preferences; not a substitute for project status.
 3. **Chat history** — local to that conversation/device path; do not treat as the source of truth.
 
-Practical habit: before leaving a session, say “update project status and push.” Opening the same repo elsewhere is then enough for the next agent to catch up.
+Practical habit: before leaving a session, run **`/update-project-status`** in Agent chat (or say “update project status and push”). Opening the same repo elsewhere is then enough for the next agent to catch up.

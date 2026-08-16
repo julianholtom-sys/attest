@@ -35,3 +35,5 @@ Prefer `docs/PROJECT_STATUS.md` for the latest branch/PR list. Work is often on 
 ## Continuity rule for agents
 
 When ending a meaningful chunk of work: refresh `docs/PROJECT_STATUS.md` (what changed, what’s next, how to run/demo), commit, push. That is the cross-device source of truth—not chat history alone.
+
+**Human shortcut:** in Agent chat type `/update-project-status` (skill + command in `.cursor/`). That runs the same “update status and push” workflow without retyping it.
