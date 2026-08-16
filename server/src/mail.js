@@ -41,6 +41,37 @@ export function validateTemplateContent(templateType, subject, bodyHtml, bodyTex
   }
 }
 
+function escapeHtml(text) {
+  return String(text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function introToHtml(text) {
+  const trimmed = String(text || "").trim();
+  if (!trimmed) return "";
+  return trimmed
+    .split(/\n{2,}/)
+    .map((block) => `<p>${escapeHtml(block).replace(/\n/g, "<br/>")}</p>`)
+    .join("");
+}
+
+function localSignatureImageHtml(entity) {
+  const asset = db
+    .prepare(
+      `SELECT id FROM entity_assets
+       WHERE entity_id = ? AND kind = 'email_header' AND is_active = 1
+       ORDER BY created_at DESC LIMIT 1`
+    )
+    .get(entity.id);
+  if (!asset) return "";
+  const port = process.env.PORT || 8787;
+  const base = (process.env.PUBLIC_BASE_URL || `http://localhost:${port}`).replace(/\/$/, "");
+  const src = `${base}/api/entities/${entity.id}/assets/${asset.id}/file`;
+  return `<p><img src="${src}" alt="Email signature" style="max-width:480px;height:auto" /></p>`;
+}
+
 export function sendTemplatedEmail({
   entityId,
   templateType,
@@ -60,11 +91,21 @@ export function sendTemplatedEmail({
     .get(entityId, templateType);
   if (!tpl) throw new Error(`Missing email template: ${templateType}`);
 
+  const introHtml = introToHtml(entity.intro_email_text);
+  const introText = String(entity.intro_email_text || "").trim();
+  const signatureImg = localSignatureImageHtml(entity);
   const subject = renderTemplate(tpl.subject, vars);
-  const bodyHtml =
-    renderTemplate(tpl.body_html, vars) + "\n" + entity.email_signature_html;
-  const bodyText =
-    renderTemplate(tpl.body_text, vars) + "\n" + entity.email_signature_text;
+  const bodyHtml = [
+    introHtml,
+    renderTemplate(tpl.body_html, vars),
+    entity.email_signature_html,
+    signatureImg,
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const bodyText = [introText, renderTemplate(tpl.body_text, vars), entity.email_signature_text]
+    .filter(Boolean)
+    .join("\n\n");
   const contentHash = sha256(`${subject}\n${bodyHtml}\n${bodyText}`);
 
   const id = newId();

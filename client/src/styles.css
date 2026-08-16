@@ -325,6 +325,24 @@ a.btn.secondary {
   color: var(--ink);
 }
 
+.envelope-row-main {
+  color: inherit;
+  min-width: 0;
+}
+
+.envelope-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.envelope-row-actions .btn {
+  min-height: 2.35rem;
+  padding: 0.4rem 0.85rem;
+}
+
 .meta {
   color: var(--ink-soft);
   font-size: 0.86rem;
@@ -548,6 +566,54 @@ textarea:focus {
 .muted {
   color: var(--ink-soft);
   font-size: 0.88rem;
+}
+
+.signature-preview {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: start;
+}
+
+.signature-preview img {
+  max-width: min(480px, 100%);
+  height: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(16, 24, 40, 0.45);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.confirm-dialog {
+  width: min(440px, 100%);
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1.25rem 1.35rem 1.15rem;
+}
+
+.confirm-dialog h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.2rem;
+}
+
+.confirm-dialog p {
+  margin: 0 0 1.1rem;
+  color: var(--ink-soft);
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.65rem;
 }
 
 @keyframes rise-in {

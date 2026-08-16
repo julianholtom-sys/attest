@@ -219,9 +219,8 @@ app.get("/api/entities", (_req, res) => {
 });
 
 app.get("/api/entities/:id", (req, res) => {
-  const entity = serializeEntity(
-    db.prepare("SELECT * FROM entities WHERE id = ?").get(req.params.id)
-  );
+  const row = db.prepare("SELECT * FROM entities WHERE id = ? AND is_active = 1").get(req.params.id);
+  const entity = serializeEntity(row);
   if (!entity) return res.status(404).json({ error: "Not found" });
   const assets = db
     .prepare(
@@ -229,9 +228,17 @@ app.get("/api/entities/:id", (req, res) => {
     )
     .all(entity.id);
   const pack = resolveBrandPack(entity.id, { industry: null });
+  const signatureAsset = db
+    .prepare(
+      `SELECT id, name, mime, kind FROM entity_assets
+       WHERE entity_id = ? AND kind = 'email_header' AND is_active = 1
+       ORDER BY created_at DESC LIMIT 1`
+    )
+    .get(entity.id);
   res.json({
     ...entity,
     assets,
+    signature_asset: signatureAsset || null,
     active_pack: {
       front: pack.front,
       back: pack.back,
@@ -263,8 +270,8 @@ app.post("/api/entities", (req, res) => {
       `INSERT INTO entities (
         id, slug, legal_name, company_number, vat_number, registered_office,
         display_name, brand_json, sending_domain, from_address, reply_to,
-        email_signature_html, email_signature_text, domain_verified, is_active, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`
+        email_signature_html, email_signature_text, intro_email_text, domain_verified, is_active, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`
     ).run(
       id,
       body.slug,
@@ -286,6 +293,7 @@ app.post("/api/entities", (req, res) => {
       body.reply_to || null,
       body.email_signature_html || `<p>Kind regards,<br/>${body.display_name}</p>`,
       body.email_signature_text || `Kind regards,\n${body.display_name}`,
+      body.intro_email_text || "",
       body.domain_verified === false ? 0 : 1,
       now()
     );
@@ -305,7 +313,9 @@ app.post("/api/entities", (req, res) => {
 });
 
 app.patch("/api/entities/:id", (req, res) => {
-  const entity = db.prepare("SELECT * FROM entities WHERE id = ?").get(req.params.id);
+  const entity = db
+    .prepare("SELECT * FROM entities WHERE id = ? AND is_active = 1")
+    .get(req.params.id);
   if (!entity) return res.status(404).json({ error: "Not found" });
   const body = req.body || {};
   const brand = {
@@ -325,6 +335,7 @@ app.patch("/api/entities/:id", (req, res) => {
       reply_to = ?,
       email_signature_html = ?,
       email_signature_text = ?,
+      intro_email_text = ?,
       domain_verified = ?
      WHERE id = ?`
   ).run(
@@ -339,6 +350,7 @@ app.patch("/api/entities/:id", (req, res) => {
     body.reply_to ?? entity.reply_to,
     body.email_signature_html ?? entity.email_signature_html,
     body.email_signature_text ?? entity.email_signature_text,
+    body.intro_email_text !== undefined ? body.intro_email_text : entity.intro_email_text,
     body.domain_verified === undefined
       ? entity.domain_verified
       : body.domain_verified
@@ -347,6 +359,15 @@ app.patch("/api/entities/:id", (req, res) => {
     entity.id
   );
   res.json(serializeEntity(db.prepare("SELECT * FROM entities WHERE id = ?").get(entity.id)));
+});
+
+app.delete("/api/entities/:id", (req, res) => {
+  const entity = db.prepare("SELECT * FROM entities WHERE id = ?").get(req.params.id);
+  if (!entity || !entity.is_active) {
+    return res.status(404).json({ error: "Not found" });
+  }
+  db.prepare("UPDATE entities SET is_active = 0 WHERE id = ?").run(entity.id);
+  res.status(204).end();
 });
 
 app.post("/api/entities/:id/assets", upload.single("file"), (req, res) => {
@@ -394,6 +415,17 @@ app.post("/api/entities/:id/assets", upload.single("file"), (req, res) => {
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
+});
+
+app.get("/api/entities/:id/assets/:assetId/file", (req, res) => {
+  const asset = db
+    .prepare("SELECT * FROM entity_assets WHERE id = ? AND entity_id = ?")
+    .get(req.params.assetId, req.params.id);
+  if (!asset) return res.status(404).json({ error: "Not found" });
+  const bytes = readBytes(asset.storage_ref);
+  res.setHeader("Content-Type", asset.mime || "application/octet-stream");
+  res.setHeader("Content-Disposition", `inline; filename="${asset.name || "signature"}"`);
+  res.send(bytes);
 });
 
 app.get("/api/templates", (_req, res) => {
@@ -635,10 +667,12 @@ app.post("/api/envelopes", (req, res) => {
       parties,
       reminderFrequency = "none",
     } = req.body || {};
-    const entity = db.prepare("SELECT * FROM entities WHERE id = ?").get(entityId);
+    const entity = db
+      .prepare("SELECT * FROM entities WHERE id = ? AND is_active = 1")
+      .get(entityId);
     if (!entity) return res.status(400).json({ error: "Unknown entity" });
     if (!entity.domain_verified) {
-      return res.status(400).json({ error: "Entity domain_verified = false; cannot create envelope" });
+      return res.status(400).json({ error: "Entity domain_verified = false; cannot create contract" });
     }
     const template = getMasterTemplate();
     if (!template) return res.status(400).json({ error: "Master contract is not configured" });

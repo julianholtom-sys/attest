@@ -22,6 +22,7 @@ export function migrate() {
   ensureColumn("envelopes", "logo_asset_id", "TEXT");
   ensureColumn("envelopes", "appendix_ids_json", "TEXT");
   ensureColumn("envelopes", "contract_page_offset", "INTEGER DEFAULT 0");
+  ensureColumn("entities", "intro_email_text", "TEXT");
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS appendices (

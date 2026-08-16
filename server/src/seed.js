@@ -237,7 +237,7 @@ async function ensureSharedCatalog() {
       title: "Master Services Agreement",
       subtitle: "Always included · three-party execution",
       lines: [
-        "This master contract is sent with every envelope.",
+        "This master contract is sent with every contract.",
         "Industry-specific schedules are attached as optional appendices.",
         "",
         "Company / Agency / Supplier execution blocks appear below.",

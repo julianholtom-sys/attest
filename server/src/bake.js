@@ -106,9 +106,9 @@ export function getMasterTemplate() {
 
 export async function bakeEnvelope(envelopeId, { actor = "system" } = {}) {
   const envelope = db.prepare("SELECT * FROM envelopes WHERE id = ?").get(envelopeId);
-  if (!envelope) throw new Error("Envelope not found");
+  if (!envelope)     throw new Error("Contract not found");
   if (!["draft", "baking"].includes(envelope.status)) {
-    throw new Error("Only draft envelopes can be baked");
+    throw new Error("Only draft contracts can be baked");
   }
 
   db.prepare(

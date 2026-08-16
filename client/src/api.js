@@ -33,6 +33,7 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }),
+  deleteEntity: (id) => request(`/api/entities/${id}`, { method: "DELETE" }),
   uploadEntityAsset: (id, kind, file, name) => {
     const body = new FormData();
     body.append("kind", kind);
@@ -133,4 +134,5 @@ export const api = {
       body: JSON.stringify({ reason }),
     }),
   documentUrl: (id, kind) => `/api/envelopes/${id}/documents/${kind}`,
+  entityAssetUrl: (entityId, assetId) => `/api/entities/${entityId}/assets/${assetId}/file`,
 };

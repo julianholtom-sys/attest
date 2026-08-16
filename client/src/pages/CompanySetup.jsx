@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api.js";
+import ConfirmDialog from "../ConfirmDialog.jsx";
 
 const emptyForm = {
   slug: "",
@@ -13,6 +14,7 @@ const emptyForm = {
   from_address: "",
   reply_to: "",
   domain_verified: true,
+  intro_email_text: "",
   email_signature_html: "",
   email_signature_text: "",
   brand: { primary: "#0074ff", secondary: "#101828", font: "Manrope" },
@@ -27,6 +29,8 @@ export default function CompanySetup() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [uploadKind, setUploadKind] = useState("front_cover");
+  const [copied, setCopied] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState(false);
 
   async function load() {
     if (isNew) return;
@@ -43,6 +47,7 @@ export default function CompanySetup() {
       from_address: data.from_address,
       reply_to: data.reply_to || "",
       domain_verified: Boolean(data.domain_verified),
+      intro_email_text: data.intro_email_text || "",
       email_signature_html: data.email_signature_html,
       email_signature_text: data.email_signature_text,
       brand: data.brand || emptyForm.brand,
@@ -76,12 +81,12 @@ export default function CompanySetup() {
     }
   }
 
-  async function onUpload(file) {
+  async function onUpload(file, kind = uploadKind) {
     if (!file || isNew) return;
     setBusy(true);
     setError("");
     try {
-      await api.uploadEntityAsset(id, uploadKind, file, `${form.display_name} ${uploadKind}`);
+      await api.uploadEntityAsset(id, kind, file, `${form.display_name} ${kind}`);
       await load();
     } catch (err) {
       setError(err.message);
@@ -89,6 +94,33 @@ export default function CompanySetup() {
       setBusy(false);
     }
   }
+
+  async function copyIntro() {
+    const text = form.intro_email_text || "";
+    if (!text.trim()) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setError("Could not copy. Select the text and copy it manually.");
+    }
+  }
+
+  async function confirmDelete() {
+    setBusy(true);
+    setError("");
+    try {
+      await api.deleteEntity(id);
+      navigate("/companies");
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+      setPendingDelete(false);
+    }
+  }
+
+  const signature = detail?.signature_asset;
 
   return (
     <div>
@@ -104,6 +136,16 @@ export default function CompanySetup() {
         <Link className="btn secondary" to="/companies">
           All companies
         </Link>
+        {!isNew ? (
+          <button
+            type="button"
+            className="btn danger"
+            disabled={busy}
+            onClick={() => setPendingDelete(true)}
+          >
+            Delete company
+          </button>
+        ) : null}
       </div>
 
       {error ? <p className="error">{error}</p> : null}
@@ -183,12 +225,75 @@ export default function CompanySetup() {
             checked={form.domain_verified}
             onChange={(e) => setField("domain_verified", e.target.checked)}
           />
-          <span>Domain verified (required before this company can send envelopes)</span>
+          <span>Domain verified (required before this company can send contracts)</span>
         </label>
         <button className="btn" type="submit" disabled={busy}>
           {busy ? "Saving…" : isNew ? "Create company" : "Save company details"}
         </button>
       </form>
+
+      <section className="panel form-grid" style={{ marginTop: "1rem" }}>
+        <h2>Introductory email</h2>
+        <p className="muted">
+          Paste the contract introduction you use in Gmail. Save it here, then copy
+          it when you need the same wording. It is stored on this machine only.
+        </p>
+        <label>
+          Intro text
+          <textarea
+            rows={10}
+            value={form.intro_email_text}
+            onChange={(e) => setField("intro_email_text", e.target.value)}
+            placeholder="Paste the introductory email from Gmail…"
+          />
+        </label>
+        <div className="toolbar">
+          <button type="button" className="btn secondary" onClick={copyIntro} disabled={!form.intro_email_text.trim()}>
+            {copied ? "Copied" : "Copy intro email"}
+          </button>
+          <button className="btn" type="button" disabled={busy} onClick={save}>
+            {busy ? "Saving…" : "Save intro email"}
+          </button>
+        </div>
+      </section>
+
+      {!isNew ? (
+        <section className="panel form-grid" style={{ marginTop: "1rem" }}>
+          <h2>Gmail signature file</h2>
+          <p className="muted">
+            Upload the same signature image attached in Gmail (PNG or JPG) from this
+            PC. It is saved in local Attest files — not pulled from Google or a
+            company mail server.
+          </p>
+          {signature ? (
+            <div className="signature-preview">
+              <img
+                src={api.entityAssetUrl(id, signature.id)}
+                alt={signature.name || "Email signature"}
+              />
+              <span className="meta">{signature.name}</span>
+            </div>
+          ) : (
+            <p className="muted">No signature file uploaded yet.</p>
+          )}
+          <label>
+            Signature image
+            <input
+              type="file"
+              accept=".png,.jpg,.jpeg,.gif,.webp"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                onUpload(file, "email_header");
+              }}
+            />
+          </label>
+        </section>
+      ) : (
+        <p className="muted" style={{ marginTop: "1rem" }}>
+          Create the company first, then you can upload its Gmail signature file.
+        </p>
+      )}
 
       {!isNew ? (
         <section className="panel form-grid" style={{ marginTop: "1rem" }}>
@@ -231,7 +336,7 @@ export default function CompanySetup() {
             {(detail?.assets || []).map((asset) => (
               <li key={asset.id}>
                 <strong>
-                  {asset.kind}
+                  {asset.kind === "email_header" ? "gmail_signature" : asset.kind}
                   {asset.is_active ? " · active" : ""}
                 </strong>
                 <span>{asset.name}</span>
@@ -239,6 +344,17 @@ export default function CompanySetup() {
             ))}
           </ul>
         </section>
+      ) : null}
+
+      {pendingDelete ? (
+        <ConfirmDialog
+          title="Are you sure?"
+          message={`Delete ${form.display_name || "this company"}? It will leave the catalog. Existing contracts stay on file.`}
+          confirmLabel="Yes, delete company"
+          busy={busy}
+          onCancel={() => (busy ? null : setPendingDelete(false))}
+          onConfirm={confirmDelete}
+        />
       ) : null}
     </div>
   );

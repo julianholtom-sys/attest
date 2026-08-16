@@ -33,7 +33,7 @@ export default function EnvelopeDetail() {
     }
   }
 
-  if (!envelope && !error) return <p className="muted">Loading envelope…</p>;
+  if (!envelope && !error) return <p className="muted">Loading contract…</p>;
   if (!envelope) return <p className="error">{error}</p>;
 
   return (

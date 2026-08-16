@@ -13,7 +13,7 @@ Update both when product decisions, architecture, or demo access change, then co
 
 1. **Companies** — sending-company catalog; legal details + brand pack (front/back cover, logo).
 2. **Templates** — one **master contract** (always sent) + optional **industry appendices** (upload/add/update).
-3. **Contracts** (UI label for envelopes) — pick sending company → master always included → optionally tick appendices → parties → bake → send → sequential sign.
+3. **Contracts** (API still uses envelope tables/routes; UI always says contract) — pick sending company → master always included → optionally tick appendices → parties → bake → send → sequential sign.
 
 ## Stack
 
