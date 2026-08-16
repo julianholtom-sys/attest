@@ -53,12 +53,12 @@ npm start
 ## Phone demo tunnel
 
 ```bash
-npm run build && npm start   # serves UI+API on :8787
-bash scripts/keep-tunnel-alive.sh
-cat TUNNEL_URL.txt           # current public https://….lhr.life URL
+bash scripts/start-live.sh      # once / recovery
+bash scripts/deploy-live.sh     # publish code; keeps same public URL
+cat TUNNEL_URL.txt
 ```
 
-Uses localhost.run (not Cloudflare quick tunnels). The watchdog health-checks the public URL and restarts if it fails.
+Uses localhost.run (not Cloudflare quick tunnels). Coding/commits must not restart the tunnel; only `deploy-live.sh` updates what the live URL serves.
 
 ## Local substitutions vs the brief
 

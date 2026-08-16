@@ -24,9 +24,10 @@ Update both when product decisions, architecture, or demo access change, then co
 ## Phone demo tunnel
 
 - Cloudflare `*.trycloudflare.com` quick tunnels proved unreliable (HTTP 530 while process still “up”).
-- Use `scripts/keep-tunnel-alive.sh` → **localhost.run** `*.lhr.life` with public health checks + auto-restart.
+- Use `scripts/keep-tunnel-alive.sh` → **localhost.run** `*.lhr.life`.
 - Live URL is written to `TUNNEL_URL.txt` (gitignored). Do not commit ephemeral URLs.
-- Start: ensure API on 8787, then in tmux `attest-tunnel`: `bash /workspace/scripts/keep-tunnel-alive.sh`.
+- **Persistence rule:** coding/commits must not restart the tunnel. Publishing to the live demo is explicit via `bash scripts/deploy-live.sh` (restarts API only; URL stays). One-time/recovery bring-up: `bash scripts/start-live.sh`.
+- Watchdog must **not** recycle SSH while the local API is briefly down (deploys); only restart SSH if it died or public fails while local is healthy.
 
 ## Open PRs / branches (as of last status update)
 

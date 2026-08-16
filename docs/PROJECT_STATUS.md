@@ -62,15 +62,18 @@ Dev split: `npm run dev` (API 8787, Vite 5173).
 ### Phone / public demo
 
 ```bash
-# API must be up on 8787 first
-bash scripts/keep-tunnel-alive.sh
-# Live URL → TUNNEL_URL.txt (gitignored)
+# One-time / recovery (starts API + tunnel)
+bash scripts/start-live.sh
+cat TUNNEL_URL.txt
+
+# Publish code changes WITHOUT changing the public URL
+bash scripts/deploy-live.sh
 ```
 
 - Prefer **localhost.run** `*.lhr.life` via the watchdog script.
-- Do **not** rely on Cloudflare `*.trycloudflare.com` quick tunnels (530 / silent death).
-- “No tunnel here” almost always means a **stale hostname** after SSH restarted — use the new URL from `TUNNEL_URL.txt`; old links do not recover.
-- Ephemeral URLs change on restart; for a fixed host later, use a named Cloudflare tunnel or localhost.run forever-free + SSH key.
+- Do **not** rely on Cloudflare `*.trycloudflare.com` quick tunnels.
+- “No tunnel here” = **stale hostname** after SSH restarted — avoid restarting the tunnel during normal work.
+- Agents must not kill the tunnel when editing/building; only `deploy-live.sh` updates what the existing URL serves.
 
 ## Continuity tooling
 
@@ -89,6 +92,7 @@ bash scripts/keep-tunnel-alive.sh
 6. Phone tunnel: Cloudflare → localhost.run watchdog with public health checks.
 7. Cross-device continuity docs + Cursor rule.
 8. Persistent `/update-project-status` slash command/skill.
+9. **Live demo persistence:** `deploy-live.sh` publishes code without recycling the tunnel URL; watchdog ignores local downtime during deploys.
 
 ## Active git / PR notes
 
@@ -103,8 +107,9 @@ bash scripts/keep-tunnel-alive.sh
 
 - [x] Phone tunnel “No tunnel here” → stale `*.lhr.life` after restart; use `TUNNEL_URL.txt`.
 - [x] Continuity docs + `/update-project-status` slash entry.
+- [x] Separate live deploy from tunnel lifecycle (`deploy-live.sh` / hold tunnel during local downtime).
 - [ ] Merge outstanding feature PRs to `main` (likely #4/#5/#6 or squash equivalent).
-- [ ] Optional: stable public host (named tunnel / forever-free SSH key).
+- [ ] Optional: stable public host (named tunnel / forever-free SSH key) so URL never changes even on SSH death.
 - [ ] Default New contract sending company to **Union Payroll**.
 
 ## Continuity for humans (any device)

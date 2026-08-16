@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
 # Phone-demo public tunnel via localhost.run (SSH reverse proxy).
-# Cloudflare quick tunnels were dying with HTTP 530 while the process
-# still looked healthy. This watchdog:
-#   1) uses SSH ServerAlive to prevent idle drops
-#   2) health-checks the public URL every 20s
-#   3) fully restarts if the public URL stops returning 200
+#
+# IMPORTANT: Do NOT restart this when deploying code. Restarting SSH always
+# mints a new *.lhr.life hostname. Only restart when the SSH process itself
+# dies, or when the public URL fails while the local API is healthy.
 set -u
 
 TARGET_HOST="${TARGET_HOST:-127.0.0.1}"
 TARGET_PORT="${TARGET_PORT:-8787}"
 URL_FILE="${URL_FILE:-/workspace/TUNNEL_URL.txt}"
 LOG_FILE="${LOG_FILE:-/tmp/phone-tunnel.log}"
-PING_EVERY_SEC="${PING_EVERY_SEC:-20}"
-FAILS_BEFORE_RESTART="${FAILS_BEFORE_RESTART:-2}"
+PING_EVERY_SEC="${PING_EVERY_SEC:-30}"
+FAILS_BEFORE_RESTART="${FAILS_BEFORE_RESTART:-5}"
 
-: > "$LOG_FILE"
-
-extract_url() {
-  grep -Eo 'https://[a-z0-9]+\.lhr\.life' "$LOG_FILE" 2>/dev/null | tail -1 || true
+local_ok() {
+  local code
+  code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 \
+    "http://${TARGET_HOST}:${TARGET_PORT}/api/health" 2>/dev/null || echo 000)
+  [[ "$code" == "200" ]]
 }
 
 public_ok() {
@@ -27,22 +27,27 @@ public_ok() {
   [[ "$code" == "200" ]]
 }
 
+extract_url() {
+  grep -Eo 'https://[a-z0-9]+\.lhr\.life' "$LOG_FILE" 2>/dev/null | tail -1 || true
+}
+
 start_tunnel() {
-  # No remote command: localhost.run streams the assigned *.lhr.life URL on connect.
-  # stdin from /dev/null keeps ssh non-interactive but still connected.
+  # Append logs — never truncate while a session may still be useful for debugging.
   ssh -T \
     -o StrictHostKeyChecking=no \
     -o UserKnownHostsFile=/dev/null \
     -o ServerAliveInterval=15 \
-    -o ServerAliveCountMax=4 \
+    -o ServerAliveCountMax=6 \
     -o ExitOnForwardFailure=yes \
     -o ConnectTimeout=20 \
+    -o TCPKeepAlive=yes \
     -R "80:${TARGET_HOST}:${TARGET_PORT}" \
     nokey@localhost.run \
     </dev/null >>"$LOG_FILE" 2>&1 &
   echo $!
 }
 
+touch "$LOG_FILE"
 attempt=0
 while true; do
   attempt=$((attempt + 1))
@@ -67,19 +72,32 @@ while true; do
   fails=0
   while kill -0 "$SSH_PID" 2>/dev/null; do
     sleep "$PING_EVERY_SEC"
+
+    # While the app is restarting/deploying, public checks may fail. Wait —
+    # do NOT recycle the SSH tunnel or the public hostname will change.
+    if ! local_ok; then
+      echo "[phone-tunnel] local API down; holding tunnel open $(date -u +%FT%TZ)" >> "$LOG_FILE"
+      fails=0
+      continue
+    fi
+
     url="$(extract_url)"
+    if [[ -z "$url" && -f "$URL_FILE" ]]; then
+      url="$(tr -d '[:space:]' < "$URL_FILE")"
+    fi
+
     if [[ -z "$url" ]]; then
       fails=$((fails + 1))
     elif public_ok "$url"; then
       fails=0
       printf '%s\n' "$url" > "$URL_FILE"
-      curl -fsS -o /dev/null --max-time 5 "http://${TARGET_HOST}:${TARGET_PORT}/api/health" >/dev/null 2>&1 || true
     else
       fails=$((fails + 1))
-      echo "[phone-tunnel] public health fail=$fails url=$url $(date -u +%FT%TZ)" | tee -a "$LOG_FILE"
+      echo "[phone-tunnel] public health fail=$fails (local OK) url=$url $(date -u +%FT%TZ)" | tee -a "$LOG_FILE"
     fi
+
     if (( fails >= FAILS_BEFORE_RESTART )); then
-      echo "[phone-tunnel] restarting after $fails failed health checks" | tee -a "$LOG_FILE"
+      echo "[phone-tunnel] restarting SSH after $fails public failures while local API healthy" | tee -a "$LOG_FILE"
       kill "$SSH_PID" 2>/dev/null || true
       wait "$SSH_PID" 2>/dev/null || true
       break
@@ -88,6 +106,6 @@ while true; do
 
   kill "$SSH_PID" 2>/dev/null || true
   wait "$SSH_PID" 2>/dev/null || true
-  echo "[phone-tunnel] tunnel ended; retry in 3s $(date -u +%FT%TZ)" | tee -a "$LOG_FILE"
-  sleep 3
+  echo "[phone-tunnel] ssh ended; retry in 5s $(date -u +%FT%TZ)" | tee -a "$LOG_FILE"
+  sleep 5
 done

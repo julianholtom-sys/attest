@@ -1,14 +1,32 @@
 ---
-description: Attest project continuity — read status docs first
+description: Protect live demo tunnel; deploy only on request
 alwaysApply: true
 ---
 
-# Attest continuity
+# Attest continuity + live demo
 
-At session start, read `AGENTS.md` and `docs/PROJECT_STATUS.md` before inventing product direction.
+At session start, read `AGENTS.md` and `docs/PROJECT_STATUS.md`.
 
 Parent brand is **Union Payroll** (https://union-payroll.ltd/), accent `#0074FF`, Manrope — not Media Launch.
 
-Phone demos use `scripts/keep-tunnel-alive.sh` (localhost.run `*.lhr.life`), not Cloudflare quick tunnels.
+## Live demo persistence (critical)
 
-When finishing meaningful work, update `docs/PROJECT_STATUS.md`, commit, and push so other devices/agents share the same state.
+The phone tunnel must stay up across normal coding. **Do not** kill or restart:
+
+- `scripts/keep-tunnel-alive.sh`
+- `ssh … nokey@localhost.run`
+- tmux session `attest-tunnel`
+
+when editing files, committing, seeding, or rebuilding — unless the user explicitly asks to restart the tunnel, or the SSH process is actually dead.
+
+To publish code to the already-running public demo:
+
+```bash
+bash scripts/deploy-live.sh
+```
+
+That rebuilds and restarts **only** the API on :8787. The public `*.lhr.life` URL must not change.
+
+Bring-up (once / recovery): `bash scripts/start-live.sh`
+
+When finishing meaningful work, update `docs/PROJECT_STATUS.md`, commit, and push (or `/update-project-status`).
